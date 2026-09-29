@@ -32,9 +32,10 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
-  # 与 app/.metadata 锁定的 revision 一致（本机 Flutter 3.44.4 / stable）。
-  # 用 revision 精确锁定，CI 与本机构建环境逐字节相同，避免版本漂移。
-  FLUTTER_VERSION: 'ad70ec4617166f1c38e5d2bfd388af71fda14f06'
+  # 本机 Flutter 3.44.4 / stable。flutter-action 的 `flutter-version` 在 stable
+  # channel 下只认**版本号**（去 release 列表里匹配），不认 commit/revision；
+  # 只有 channel: master 才接受 git 引用。所以这里写版本号锁定。
+  FLUTTER_VERSION: '3.44.4'
 
 jobs:
   build:
@@ -54,10 +55,10 @@ jobs:
       - uses: actions/checkout@v5
 
       # ── 装 Flutter ────────────────────────────────────────────
-      # 版本号以 app/.metadata 锁定的 revision 为准；subosito/flutter-action
-      # 会装对应 stable 版本并放进 PATH。
+      # 版本号锁 3.44.4（stable）；flutter-action 在 stable channel 下只认版本号。
       - uses: subosito/flutter-action@v2
         with:
+          channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
