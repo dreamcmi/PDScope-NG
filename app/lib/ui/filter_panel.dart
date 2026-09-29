@@ -376,23 +376,74 @@ class _SwitchRow extends StatelessWidget {
     final p = PaletteScope.of(context);
     return InkWell(
       onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(6),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           children: [
             Expanded(
-              child: Text(label, style: TextStyle(fontSize: 11.5, color: p.tx2)),
-            ),
-            SizedBox(
-              height: 18,
-              width: 30,
-              child: Switch(
-                value: value,
-                onChanged: onChanged,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, color: p.tx2),
               ),
             ),
+            const SizedBox(width: 8),
+            MiniSwitch(value: value),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 小号开关（自绘）。
+///
+/// ⚠ **别把 Material 的 [Switch] 塞进小尺寸的 `SizedBox`**：它有自己固定的固有几何
+///   （M3 的轨道约 52×32，外面还有一圈最小点击区）。约束被压到 30×18 之后，
+///   它**仍然按自己的尺寸去画** —— 轨道以 `(size.width - 轨道宽) / 2` 定位，算出来
+///   是负的，于是往左右各越界一段，**正好压在左边的标签文字上**。
+///   这种错不抛异常、不报溢出，只是几行糊在一起，所以只能靠「不用它」来避免。
+///   这里自己画：尺寸就是这个尺寸，绝不越界。
+///
+/// 公开是为了让界面冒烟测试能量到它的尺寸（见 `test/ui_smoke_test.dart`）。
+class MiniSwitch extends StatelessWidget {
+  const MiniSwitch({super.key, required this.value});
+
+  final bool value;
+
+  static const Size size = Size(32, 18);
+  static const double _knob = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    const move = Duration(milliseconds: 120);
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: AnimatedContainer(
+        duration: move,
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: value ? p.accent : p.panel2,
+          borderRadius: BorderRadius.circular(size.height / 2),
+          border: Border.all(color: value ? p.accent : p.line),
+        ),
+        child: AnimatedAlign(
+          duration: move,
+          curve: Curves.easeOut,
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            width: _knob,
+            height: _knob,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: value ? Colors.white : p.tx3,
+              shape: BoxShape.circle,
+            ),
+          ),
         ),
       ),
     );

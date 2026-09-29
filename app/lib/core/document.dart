@@ -34,6 +34,10 @@ class PagedRows {
   final Map<int, PacketRow> _cache = {};
   final Set<int> _inflight = {};
 
+  /// 取过但失败的页。**记住它，不再重试** ——
+  /// 否则界面每次重画都会把这一页再请求一遍：失败一次就变成一直失败、一直请求。
+  final Set<int> _failed = {};
+
   PacketRow? at(int i) => _cache[i];
 
   bool isLoaded(int i) => _cache.containsKey(i);
@@ -44,7 +48,7 @@ class PagedRows {
     if (total <= 0) return out;
     final last = to.clamp(0, total - 1);
     for (var p = from ~/ pageSize; p <= last ~/ pageSize; p++) {
-      if (_inflight.contains(p)) continue;
+      if (_inflight.contains(p) || _failed.contains(p)) continue;
       final start = p * pageSize;
       final end = (start + pageSize).clamp(0, total);
       var complete = true;
@@ -68,9 +72,16 @@ class PagedRows {
 
   void markInFlight(int page) => _inflight.add(page);
 
+  /// 这一页取失败了。已经取过的行留着，但这一页不再重复请求。
+  void markFailed(int page) {
+    _failed.add(page);
+    _inflight.remove(page);
+  }
+
   void clear() {
     _cache.clear();
     _inflight.clear();
+    _failed.clear();
   }
 
   void setTotal(int n) {
@@ -107,6 +118,12 @@ class CaptureDocument extends ChangeNotifier {
 
   BusSeries? bus;
   bool busLoading = false;
+
+  /// 是否**已经取过一次**模拟量轨迹（不论取没取到）。
+  ///
+  /// 界面靠它区分「还在取」和「取过了，就是没有」——只判 `bus == null` 的话，
+  /// 请求失败或返回空时**转圈永远停不下来**（数据永远到不了，条件永远成立）。
+  bool busAttempted = false;
 
   WaveformRange? wave;
   bool waveLoading = false;
@@ -149,18 +166,22 @@ class CaptureDocument extends ChangeNotifier {
   /// 读一页并补进缓存。
   Future<void> loadPage(EngineClient engine, int page) async {
     if (rows.total <= 0) return;
-    rows.markInFlight(page);
     final offset = page * rows.pageSize;
+    if (offset >= rows.total) return;
     final limit = rows.pageSize.clamp(0, rows.total - offset);
     if (limit <= 0) return;
+    // ⚠ 这几行「不算数」的提前返回必须发生在 markInFlight **之前**：
+    //   标了在飞却不发请求，这一页就永远是「在飞」状态，再也不会被请求。
+    rows.markInFlight(page);
     try {
       final raw = await engine.page(id, offset, limit);
       rows.put(page, raw.map(PacketRow.new).toList(), offset);
       notifyListeners();
     } catch (e) {
-      rows.put(page, const [], offset);
-      // 取页失败不改标签状态（会话还在），只在界面上把这一页留空。
+      // 取页失败不改标签状态（会话还在），只把这一页记住、不再重试。
+      rows.markFailed(page);
       debugPrint('取第 $page 页失败：$e');
+      notifyListeners();
     }
   }
 
@@ -192,6 +213,8 @@ class CaptureDocument extends ChangeNotifier {
       bus = null;
     } finally {
       busLoading = false;
+      // 「收尾了」这件事必须单独记一笔：取到空和没取过，界面要给不同的说法。
+      busAttempted = true;
       notifyListeners();
     }
   }

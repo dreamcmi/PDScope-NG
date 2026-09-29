@@ -96,6 +96,9 @@ class _AppShellState extends State<AppShell> {
   /// 上一次报给外壳的状态；没变就不重复发。
   String? _reportedShellState;
 
+  /// 重绘源：工作区 + 当前文档（订阅由工作区的通知主动驱动，见 [_RepaintSource]）。
+  late _RepaintSource _repaint = _RepaintSource(ws);
+
   @override
   void initState() {
     super.initState();
@@ -107,10 +110,21 @@ class _AppShellState extends State<AppShell> {
   }
 
   @override
+  void didUpdateWidget(AppShell old) {
+    super.didUpdateWidget(old);
+    // 正常不会换工作区；真换了就得把订阅也换过去，否则新工作区的通知全打空。
+    if (!identical(old.workspace, ws)) {
+      _repaint.dispose();
+      _repaint = _RepaintSource(ws);
+    }
+  }
+
+  @override
   void dispose() {
     _unlistenShell?.call();
     ws.removeListener(_reportShellState);
     ws.prefs.removeListener(_reportShellState);
+    _repaint.dispose();
     searchFocus.dispose();
     super.dispose();
   }
@@ -121,7 +135,7 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
     return AnimatedBuilder(
-      animation: ws,
+      animation: _repaint,
       builder: (context, _) {
         final doc = ws.active;
         return Scaffold(
@@ -258,6 +272,49 @@ class _AppShellState extends State<AppShell> {
         title: title,
       ),
     );
+  }
+}
+
+/// 「工作区 + 当前文档」的合成重绘源。
+///
+/// ⚠ 这件事**不能**写成下游的一个懒表达式（比如在 `AnimatedBuilder` 的
+///   `animation:` 上现取现拼 `Listenable.merge([ws, ws.active])`）。那个表达式只在
+///   **State 的 `build()` 里**求值，而 `AnimatedBuilder` 自己收到通知后的重建
+///   **不经过 State 的 `build()`** —— 于是合并结果会一直停在「还没有文档」那一版，
+///   文档的订阅永远接不上。现象极具误导性：工作区通知（打开文件、解码结束）都正常，
+///   只有**文档自己的**通知（分页取回来、详情回来、模拟量轨迹回来）全都打空，
+///   看起来就是「表格要滚一下才出内容」「VBUS / IBUS 一直转圈」。
+///
+/// 所以订阅要**主动驱动**：工作区一通知就重新对一下当前文档，顺手把通知转发出去。
+class _RepaintSource extends ChangeNotifier {
+  _RepaintSource(this._ws) {
+    _ws.addListener(_onWorkspace);
+    _attach(_ws.active);
+  }
+
+  final Workspace _ws;
+  CaptureDocument? _doc;
+
+  void _onWorkspace() {
+    _attach(_ws.active);
+    notifyListeners();
+  }
+
+  void _attach(CaptureDocument? doc) {
+    if (identical(doc, _doc)) return;
+    _doc?.removeListener(_bubble);
+    _doc = doc;
+    _doc?.addListener(_bubble);
+  }
+
+  void _bubble() => notifyListeners();
+
+  @override
+  void dispose() {
+    _ws.removeListener(_onWorkspace);
+    _doc?.removeListener(_bubble);
+    _doc = null;
+    super.dispose();
   }
 }
 

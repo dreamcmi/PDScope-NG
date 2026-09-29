@@ -96,21 +96,32 @@ class _TimelineState extends State<Timeline> {
           Expanded(
             child: !doc.decoded
                 ? Center(child: Text('解码后显示模拟量轨迹', style: TextStyle(fontSize: 11.5, color: p.tx3)))
-                : (doc.meta?.hasBus != true
-                      ? _noBus(p)
-                      : (series == null || series.isEmpty
-                            ? const Center(
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              )
-                            : _chart(p, series))),
+                : (doc.meta?.hasBus != true ? _noBus(p) : _busArea(p)),
           ),
         ],
       ),
     );
+  }
+
+  /// 曲线区：**取过了才敢说「没有」**。
+  ///
+  /// ⚠ 先前这里只判 `series == null` 就转圈。一旦请求失败或返回空，
+  ///   转圈就**永远停不下来** —— 数据永远到不了，条件永远成立，而界面上看不出
+  ///   是「还在取」还是「根本取不到」。所以要三态：有数据 / 还在取 / 取过了没有。
+  Widget _busArea(Palette p) {
+    final s = doc.bus;
+    if (s != null && !s.isEmpty) return _chart(p, s);
+    if (!doc.busAttempted) {
+      // 还没发起请求（`_maybeLoad` 是异步的）或正在取 —— 两种都该转圈。
+      return const Center(
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return _noBus(p);
   }
 
   Widget _header(Palette p, bool hasAux) {
