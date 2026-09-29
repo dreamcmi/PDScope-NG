@@ -1,0 +1,400 @@
+// filter_panel.dart — 左侧筛选栏
+//
+// 「选择性屏蔽」的落点：方向、链路（PD 是 SOP / UFCS 是物理链路）、报文类别、
+// 具体报文类型（多选 + 计数）、时间窗口、关键字，任意组合。
+//
+// ⚠ 候选值**跟着协议走**（`linkValues` / `catValues`）—— 拿 PD 的 SOP 列表去筛 UFCS
+// 会把报文全筛没。这份判断只在 [filters.dart] 里写一次，界面这里只读结果。
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../core/document.dart';
+import '../core/filters.dart';
+import '../core/formatting.dart';
+import '../core/palette.dart';
+import '../core/workspace.dart';
+
+class FilterPanel extends StatelessWidget {
+  const FilterPanel({super.key, required this.workspace, required this.doc});
+
+  final Workspace workspace;
+  final CaptureDocument doc;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Container(
+      width: 236,
+      decoration: BoxDecoration(
+        color: p.panel,
+        border: Border(right: BorderSide(color: p.line)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _header(context, p),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!doc.decoded)
+                    Text(
+                      doc.busy ? '正在读取…' : '等待解码',
+                      style: TextStyle(fontSize: 11.5, color: p.tx3),
+                    )
+                  else ...[
+                    _quickFilters(context, p),
+                    const _Gap(),
+                    _multi(context, p, '方向', roleValues, doc.filters.roles),
+                    const _Gap(),
+                    _multi(context, p, linkTitle(doc.protocol), linkValues(doc.protocol), doc.filters.sops),
+                    const _Gap(),
+                    _multi(context, p, '类别', catValues(doc.protocol), doc.filters.cats),
+                    const _Gap(),
+                    _types(context, p),
+                    const _Gap(),
+                    _timeWindow(context, p),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context, Palette p) => Container(
+    height: 34,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: p.line))),
+    child: Row(
+      children: [
+        Text(
+          '筛选',
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: p.tx),
+        ),
+        const Spacer(),
+        Tooltip(
+          message: '折叠筛选栏',
+          child: InkWell(
+            onTap: () => workspace.prefs.filtersCollapsed = true,
+            borderRadius: BorderRadius.circular(5),
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: Icon(Icons.chevron_left, size: 16, color: p.tx3),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  /// 快捷过滤：一键屏蔽 GoodCRC 心跳 / 只看 CRC 错误 / 只看功率协商 / 只看状态切换。
+  Widget _quickFilters(BuildContext context, Palette p) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _SwitchRow(
+        label: doc.isUfcs ? '屏蔽 ACK / NCK 心跳' : '屏蔽 GoodCRC 心跳',
+        value: doc.filters.hideGoodCrc,
+        onChanged: (v) => _apply((f) => f.hideGoodCrc = v),
+      ),
+      _SwitchRow(
+        label: '只看 CRC 错误',
+        value: doc.filters.onlyBad,
+        onChanged: (v) => _apply((f) => f.onlyBad = v),
+      ),
+      _SwitchRow(
+        label: '只看功率协商',
+        value: doc.filters.onlyPower,
+        onChanged: (v) => _apply((f) => f.onlyPower = v),
+      ),
+      _SwitchRow(
+        label: '只看状态切换',
+        value: doc.filters.onlyEnter,
+        onChanged: (v) => _apply((f) => f.onlyEnter = v),
+      ),
+    ],
+  );
+
+  /// 多选一栏。[values] 是候选，[selected] 是当前选中的子集。
+  Widget _multi(
+    BuildContext context,
+    Palette p,
+    String title,
+    List<String> values,
+    Set<String> selected,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: title,
+          trailing: Text(
+            '${selected.length}/${values.length}',
+            style: TextStyle(fontSize: 10.5, color: p.tx3),
+          ),
+        ),
+        Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: [
+            for (final v in values)
+              _Toggle(
+                label: v,
+                on: selected.contains(v),
+                color: _valueColor(p, v),
+                onTap: () => _apply((f) {
+                  // 允许选空 —— 「一个都不选」是合法且有用的状态（等价于全屏蔽）。
+                  if (!selected.remove(v)) selected.add(v);
+                }, rebuildAfter: true),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 具体报文类型（多选 + 计数）。候选与计数由核心在解码后给出。
+  Widget _types(BuildContext context, Palette p) {
+    final counts = doc.typeCounts;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: '报文类型',
+          trailing: doc.filters.types.isEmpty
+              ? Text('全部', style: TextStyle(fontSize: 10.5, color: p.tx3))
+              : TextButton(
+                  onPressed: () => _apply((f) => f.types.clear(), rebuildAfter: true),
+                  style: TextButton.styleFrom(
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text('清空', style: TextStyle(fontSize: 10.5, color: p.accent)),
+                ),
+        ),
+        if (counts.isEmpty)
+          Text('解码后列出', style: TextStyle(fontSize: 11, color: p.tx3))
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 208),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final e in counts.entries)
+                    InkWell(
+                      onTap: () => _apply((f) {
+                        if (!f.types.remove(e.key)) f.types.add(e.key);
+                      }, rebuildAfter: true),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              doc.filters.types.contains(e.key)
+                                  ? Icons.check_box
+                                  : Icons.check_box_outline_blank,
+                              size: 14,
+                              color: doc.filters.types.contains(e.key) ? p.accent : p.tx3,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                e.key,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, color: p.tx2),
+                              ),
+                            ),
+                            Text(
+                              '${e.value}',
+                              style: TextStyle(fontSize: 10.5, color: p.tx3),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 时间窗口。归一化 0..1，与时间轴的刷选是同一套坐标。
+  Widget _timeWindow(BuildContext context, Palette p) {
+    final f = doc.filters;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: '时间窗口',
+          trailing: f.hasTimeWindow
+              ? TextButton(
+                  onPressed: () => _apply((fl) => fl.resetView()),
+                  style: TextButton.styleFrom(
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text('复位视图', style: TextStyle(fontSize: 10.5, color: p.accent)),
+                )
+              : null,
+        ),
+        RangeSlider(
+          values: RangeValues(f.tFrom, f.tTo),
+          onChanged: (v) {
+            f.tFrom = v.start;
+            f.tTo = v.end;
+            doc.touch();
+          },
+          // 松手才重建视图：拖动过程中每帧都重建会卡。
+          onChangeEnd: (_) => _apply(null),
+        ),
+        Text(
+          '${fmtReadout(f.tFrom * doc.spanSec, doc.spanSec)} — '
+          '${fmtReadout(f.tTo * doc.spanSec, doc.spanSec)}',
+          style: TextStyle(fontSize: 11, color: p.tx3),
+        ),
+      ],
+    );
+  }
+
+  Color _valueColor(Palette p, String v) {
+    if (roleValues.contains(v)) return p.forRole(v).$1;
+    return p.accent;
+  }
+
+  /// 改完筛选后把新条件推给核心并刷新视图。
+  ///
+  /// [mutate] 为 null 表示「调用方已经改好了 filters，只要重算」。
+  void _apply(void Function(FilterState f)? mutate, {bool rebuildAfter = false}) {
+    if (mutate != null) mutate(doc.filters);
+    doc.touch();
+    unawaited(workspace.ready.then((e) => doc.applyFilters(e)));
+    if (rebuildAfter) doc.touch();
+  }
+}
+
+class _Gap extends StatelessWidget {
+  const _Gap();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(height: 13);
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.title, this.trailing});
+
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: p.tx2,
+              letterSpacing: .4,
+            ),
+          ),
+          const Spacer(),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _Toggle extends StatelessWidget {
+  const _Toggle({
+    required this.label,
+    required this.on,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool on;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: on ? color.withValues(alpha: .14) : p.panel2,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: on ? color.withValues(alpha: .55) : p.line,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            color: on ? color : p.tx3,
+            fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(label, style: TextStyle(fontSize: 11.5, color: p.tx2)),
+            ),
+            SizedBox(
+              height: 18,
+              width: 30,
+              child: Switch(
+                value: value,
+                onChanged: onChanged,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

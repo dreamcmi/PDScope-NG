@@ -1,0 +1,32 @@
+; pdscope.def — Windows 导出表
+;
+; 只导出稳定的 extern "C" 接口。C++ 符号一律不导出（配合 CMake 里的
+; C_VISIBILITY_PRESET hidden），这样 Dart FFI 的接触面是可控且可审计的。
+
+LIBRARY pdscope
+
+EXPORTS
+    pdscope_version
+    pdscope_abi_version
+    pdscope_status_name
+    pdscope_buf_free
+    pdscope_str_free
+    pdscope_open_bytes
+    pdscope_open_file
+    pdscope_close
+    pdscope_metadata
+    pdscope_decode
+    pdscope_cancel
+    pdscope_get_progress
+    pdscope_set_filter
+    pdscope_view_count
+    pdscope_packet_count
+    pdscope_query_page
+    pdscope_packet_detail
+    pdscope_waveform_range
+    pdscope_bus_series
+    pdscope_type_counts
+    pdscope_packet_marks
+    pdscope_export_csv
+    pdscope_export_json
+    pdscope_default_csv_name

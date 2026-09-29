@@ -1,0 +1,23 @@
+# ── 构建产物 ─────────────────────────────────────────────
+# C++ 核心的 CMake 构建目录（build/out 里的 pdscope.dll / pdscope-cli.exe 等）
+/build/
+
+# 自检截图（由 CI 从深层的 artifacts/ 直传，不放仓库、不进发行包）
+/artifacts/
+
+# 下载缓存：third_party 里已经是解压好的可构建源码，原始 zip/tar.gz 不入库
+/_dl/
+
+# ── 杂项 ───────────────────────────────────────────────
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# ── Flutter 界面（app/ 内另有 Flutter 自带的 .gitignore，这里兜底）────
+# app/build、app/.dart_tool、各平台 flutter/ephemeral 等已由 app/*/.gitignore 覆盖；
+# 下面再兜一层以防遗漏。
+app/build/
+app/.dart_tool/
+app/.flutter-plugins-dependencies
+app/**/flutter/ephemeral/

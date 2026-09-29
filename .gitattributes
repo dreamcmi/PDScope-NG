@@ -1,0 +1,16 @@
+# 统一换行：源码文本一律 LF，Windows 批处理保留 CRLF。
+# 避免不同平台 checkout 时 diff 全是换行差异。
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.rc  text eol=crlf
+
+# 二进制不碰
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
