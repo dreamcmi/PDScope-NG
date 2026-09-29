@@ -1,7 +1,5 @@
 // extended.h — 扩展消息数据块解析（PD 3.2 Chapter 6.5）
 //
-// 对应 JS 源：src/js/pd/extended.js
-
 #pragma once
 
 #include <cstdint>

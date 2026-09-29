@@ -2,7 +2,7 @@
 //
 // 造库这一步走 `sqlite3_serialize`（不需要落盘），所以测试目录里不会多出临时文件。
 // 断言的重点是**语义口径**而不是「能不能读」：CRC 未记录、时间戳毫秒映射、
-// pd_table/ufcs_table 分流 —— 这三条是与 PDScope 基线对齐的地方。
+// pd_table/ufcs_table 分流 —— 这三条是本工具的核心口径。
 
 #include "test.h"
 
@@ -213,10 +213,9 @@ TEST(sqlite_ufcs_decode_uses_container_link) {
     }
 }
 
-TEST(session_export_csv_filter_scope_matches_baseline) {
-    // 命令行导出必须**不过筛选**（对齐 JS 的 `tools/cli.js --csv`：直接喂全部 packets），
-    // 而界面「另存为」导出的是当前视图。这份夹具里三条全是 GoodCRC，而默认筛选
-    // `hideGoodCrc = true`（与 JS UI 的 app.js 默认值一致）⇒ 视图为空、全量有三条。
+TEST(session_export_csv_filter_scope) {
+    // 命令行导出必须**不过筛选**（直接喂全部 packets），而界面「另存为」导出的是当前视图。
+    // 这份夹具里三条全是 GoodCRC，而默认筛选 `hideGoodCrc = true` ⇒ 视图为空、全量有三条。
     // 顺带钉住「视图可以为空但导出照样有内容」这条零报文路径。
     auto s = Session::openBytes(makePdDb(), "抓包.sqlite");
     s->decode(-1, 0, false);

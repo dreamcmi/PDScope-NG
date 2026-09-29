@@ -8,9 +8,9 @@
 namespace pdscope {
 namespace {
 
-/** 把实现细节收在一处：`fmtHz` 与 JS 的 `(hz/1e6).toFixed(3).replace(/\.?0+$/,'') + ' MHz'` 等价。 */
+/** 把实现细节收在一处：`fmtHz` 按量级换单位，并去掉多余的尾零。 */
 std::string fmtHz(double hz) {
-    std::string s = jsToFixed(hz / 1e6, 3);
+    std::string s = toFixedStr(hz / 1e6, 3);
     // 去掉小数点后多余的 0，再去掉孤立的小数点
     size_t dot = s.find('.');
     if (dot != std::string::npos) {

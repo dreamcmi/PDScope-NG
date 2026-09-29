@@ -1,6 +1,5 @@
 // symbols.h — USB PD 物理层符号表（BMC 4B5B 编码、K-code、有序集）
 //
-// 对应 JS 源：src/js/pd/symbols.js
 // 位序约定：每字节内 bit0 时间最早（LSB 优先）。5 个比特拼一个符号，
 // 因此符号里的 bit0 也是最早收到的位。
 
@@ -48,13 +47,13 @@ extern const std::vector<OrderedSet> SOP_ORDERED_SETS;
 /** 纯序列数组（与 SOP_ORDERED_SETS 一一对应）。 */
 extern const std::vector<std::vector<uint8_t>> SOP_SEQUENCES;
 
-/** 序列（4 个符号值，按 JS 的 join() 形式拼接成的字符串）→ 有序集。 */
+/** 序列（4 个符号值拼成的字符串）→ 有序集。 */
 const OrderedSet* findOrderedSetByKey(const std::string& key);
 
 /** 名称 → 有序集。 */
 const OrderedSet* findOrderedSetByName(const std::string& name);
 
-/** 用 4 个符号值构造 JS 同形的 key（如 "17,17,17,18"）。 */
+/** 用 4 个符号值构造 key（如 "17,17,17,18"）。 */
 std::string sopKey(const uint8_t sym[4]);
 
 /** 只用 4 个符号里的「前 k 个」判定有序集（返回最佳匹配）。 */

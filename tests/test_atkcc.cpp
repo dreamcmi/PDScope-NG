@@ -58,9 +58,9 @@ TEST(atkcc_parse_sample_rate_units) {
     CHECK_EQ(parseSampleRate("Channel=0\n").source, std::string("default"));
     CHECK_EQ(parseSampleRate("").source, std::string("default"));
 
-    // 「数量级离谱」的判据是 **[10 kHz, 1 GHz] 区间**，与 JS 基线逐条对齐（探针实测）：
+    // 「数量级离谱」的判据是 **[10 kHz, 1 GHz] 区间**：
     //   · 裸数字按 kHz 理解 ⇒ `SampleRate=12` 就是 12 kHz，**落在区间内**，照样认
-    //     （别按直觉把它改成 default —— 基线就是这么认的）；
+    //     （别按直觉把它改成 default —— 12 kHz 本身是合法采样率）；
     //   · 显式单位、或越出区间的才算离谱。
     CHECK_EQ(parseSampleRate("SampleRate=12\n").source, std::string("declared"));
     CHECK_NEAR(parseSampleRate("SampleRate=12\n").hz, 12000.0, 1.0);

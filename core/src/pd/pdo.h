@@ -1,7 +1,5 @@
 // pdo.h — 电源数据对象（PDO）与请求数据对象（RDO）解析
 //
-// 对应 JS 源：src/js/pd/pdo.js
-
 #pragma once
 
 #include <cstdint>

@@ -1,7 +1,5 @@
 // data.h — 数据消息里除 PDO/RDO/VDM 之外的固定格式对象
 //
-// 对应 JS 源：src/js/pd/data.js
-
 #pragma once
 
 #include <cstdint>

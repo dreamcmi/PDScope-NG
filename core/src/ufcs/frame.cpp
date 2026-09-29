@@ -1,6 +1,4 @@
 // frame.cpp — UFCS 切帧与分析仪容器行结构识别（实现见 frame.h）
-//
-// 切帧逻辑逐行移植自 PDScope/src/js/ufcs/frame.js。
 
 #include "frame.h"
 #include "crc.h"

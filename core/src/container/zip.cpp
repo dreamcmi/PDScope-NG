@@ -179,7 +179,7 @@ bool ZipReader::read(const std::string& name, Bytes& out) const {
         failFormat("不支持的压缩方式 " + std::to_string(e->method) + "（" + name + "）");
     }
 
-    // 核对 CRC-32（计划 §4：zlib 除解压外还要核对 ZIP CRC）
+    // 核对 CRC-32（zlib 除解压外还要核对 ZIP CRC）
     if (e->crc32 != 0 || e->uncompressedSize > 0) {
         const uint32_t got = static_cast<uint32_t>(
             crc32(0L, reinterpret_cast<const Bytef*>(out.data()), static_cast<uInt>(out.size())));

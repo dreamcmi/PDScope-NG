@@ -1,6 +1,6 @@
 // decoder.cpp — UFCS 报文解码器（实现见 decoder.h）
 //
-// 逐行移植自 PDScope/src/js/ufcs/decoder.js。中文字面值原样保留（UTF-8）。
+// 中文字面值原样保留（UTF-8）。
 
 #include "decoder.h"
 #include "tables.h"

@@ -1,7 +1,7 @@
 // decode_stats.h — 解码统计口径（三条来源共用）
 //
 // 界面顶栏 chip、CSV 导出末尾的「该说的话」、自检断言都读这里。
-// 字段含义以 PDScope（JS 基线）为准，迁移不改口径。
+// 这里是**对外口径**：字段含义一旦定下就是 ABI 的一部分，改名要同步 doc/abi.md。
 #pragma once
 
 #include "util.h"

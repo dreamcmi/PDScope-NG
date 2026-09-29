@@ -4,7 +4,7 @@
 //   · `.sqlite`   —— 三张表（pd_chart 波形 / pd_table 事件 / pd_table_key 密钥）
 //   · `.pdStream` —— 只有 pd_table 那部分的二进制记录流，没有 ADC 波形
 // 而**报文的解码流程完全一样**。把「取行」抽成接口之后，解码、事件拆分、
-// CRC 口径、统计全都只有一份实现（对应 JS 侧 core/pdstream.js 的 PdStreamTable）。
+// CRC 口径、统计全都只有一份实现。
 #pragma once
 
 #include "util.h"
@@ -24,7 +24,7 @@ struct SqlValue {
     bool isNull() const { return kind == Kind::Null; }
     bool isBlob() const { return kind == Kind::Blob; }
 
-    /** 数值化：Blob / Text / Null 一律给 0（与 JS 的 `Number(x) || 0` 同口径）。 */
+    /** 数值化：Blob / Text / Null 一律给 0。 */
     double asDouble() const {
         switch (kind) {
             case Kind::Int: return static_cast<double>(i);

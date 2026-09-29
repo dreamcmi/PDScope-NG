@@ -4,20 +4,14 @@ USB Power Delivery / UFCS 抓包分析工具。**解析内核是 C++17，界面�
 两者以一层稳定的 C ABI（`core/include/pdscope/pdscope.h`）相连；
 同一个内核另配一个不依赖图形环境的命令行程序 `pdscope-cli`。
 
-三种抓包来源**按文件内容识别，不看扩展名**：
+支持的抓包来源：
 
 | 来源 | 容器 | 解析路径 |
 | --- | --- | --- |
-| 正点原子 ATK-C | `.atkcc`（ZIP 魔数） | 通道电平采样 → BMC → 4B5B → PD 报文 |
+| 正点原子 ATK-C | `.atkcc` | 通道电平采样 → BMC → 4B5B → PD 报文 |
 | POWER-Z 分析仪 | `.sqlite` + `pd_table` | 报文已解到逻辑字节，直接走语义层 |
 | POWER-Z 分析仪 | `.sqlite` + `ufcs_table` | UFCS 帧、方向、CRC-8 与数据字段 |
 | 记录流 | `.pdStream` | 只有报文，没有 ADC 波形 |
-
-三者解出的报文对象**同形**，所以界面、筛选与导出只有「读文件怎么分流」和
-「协议相关那几处」分叉。
-
-> 迁移背景与验收门槛见仓库外的 `../flutter-migration-plan.md`。
-> 本目录是新实现；旧的 JS/Tauri 版本（`../PDScope`）在迁移期间保留，作为行为基线。
 
 ## 目录
 
@@ -34,7 +28,7 @@ doc/desktop.md 桌面外壳：拖放、文件关联、菜单这一层怎么接
 third_party/  SQLite / zlib / nlohmann-json（见 THIRD_PARTY_NOTICES.md）
 _dl/          依赖的原始归档（用于核对校验值，不入发行包）
 tools/        msvc-env.sh（Git Bash 里搭 MSVC 环境）、smoke-shell.py（外壳端到端探针）、
-              capture-window.py（按标题抓窗口截图）、diff-against-js.mjs
+              capture-window.py（按标题抓窗口截图）、csv-diff.mjs
 artifacts/    自检产出的截图（不参与打包）
 ```
 
@@ -42,7 +36,7 @@ artifacts/    自检产出的截图（不参与打包）
 
 桌面程序除了界面本身，还接了一层**跟操作系统打交道**的代码（Windows：
 `app/windows/runner/`）：拖放、命令行与文件关联、第二个实例转交、中文菜单。
-它交给界面的**只有路径** —— 是不是抓包、是 ATK-C 还是 POWER-Z，一律由核心按内容判定。
+它交给界面的**只有路径**，格式一律由核心判定。
 
 ## 构建
 
@@ -80,7 +74,7 @@ flutter build windows --release
 4. 装了文件关联之后双击 `.atkcc`；已经有窗口开着时，**第二份会作为新标签进同一个窗口**
 
 四条的落点相同：外壳只把**路径**交给界面，界面走同一个 `openFiles` 入口
-（所以每次都是新标签、坏文件只红自己那一个标签）。格式判定一律由核心按内容做。
+（所以每次都是新标签、坏文件只红自己那一个标签）。
 
 中文菜单、单实例转交、拖放为什么要在 Flutter 的子窗口上再挂一级消息过程 ——
 见 [`doc/desktop.md`](doc/desktop.md)。

@@ -1,8 +1,8 @@
 // engine.dart — 核心调用都放在工作 isolate 上
 //
 // 为什么必须有这一层：`pdscope_decode` 是一次**阻塞**的 C 调用（大文件的
-// .atkcc 解码要几百毫秒到数秒）。直接在界面 isolate 上调它，窗口会假死 —— 这正是
-// JS 基线用 `yieldToMain` 反复让出主线程要解决的问题，Flutter 这边用「换线程」解决。
+// .atkcc 解码要几百毫秒到数秒）。直接在界面 isolate 上调它，窗口会假死 ——
+// 所以用「换线程」而不是在主线程上让出。
 //
 // 进出的约定：
 //   · 主 isolate 只发命令、只收结果；所有 session 句柄都住在工作 isolate 里。

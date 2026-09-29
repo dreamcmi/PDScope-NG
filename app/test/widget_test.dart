@@ -1,7 +1,7 @@
 // widget_test.dart — 界面冒烟测试
 //
 // 刻意只测「不依赖核心动态库」的部分：真正的解析行为由 C++ 侧的
-// `pdscope-tests`（51 个用例）与 `tools/diff-against-js.mjs` 的逐字节差分负责，
+// `pdscope-tests`（61 个用例）与 `tools/csv-diff.mjs` 的逐字节差分负责，
 // 界面这边再做一遍只是重复。界面测试的价值在于布局与取色这类自洽性。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

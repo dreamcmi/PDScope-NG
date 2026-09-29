@@ -1,7 +1,5 @@
 // vdm.h — Vendor Defined Message（VDM）解析
 //
-// 对应 JS 源：src/js/pd/vdm.js
-
 #pragma once
 
 #include <cstdint>

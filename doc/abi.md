@@ -92,10 +92,9 @@ ANSI 字节 —— 两边错得刚好对上。真正的调用方（Dart FFI、�
 
 > **视图是懒重建的。** `view_count` / `query_page` / `export_csv` 都会在需要时先把视图
 > 建出来，三者看到的必须是**同一个**视图。
-> ⚠ 这里曾经有过一个缺陷：`view_count` 直接读了内部的 `vector::size()`，解码后视图还没
-> 构建就返回 0，而 `query_page` 会顺手重建、照常返回一行行数据 —— 界面于是变成
-> 「列表里有行、条数写 0 条」。它只在**视图非空**时才显形，视图恰好为空时看着完全正常，
-> 所以躲过了很久。回归测试见 `tests/test_abi.cpp` 的 `abi_view_count_agrees_with_query_page`。
+> ⚠ 三个入口都要走同一份重建逻辑：只要有一个直接读内部容器大小，视图非空之前就会返回
+> 0，界面于是变成「列表里有行、条数写 0 条」——而且视图恰好为空时看着完全正常，很难发现。
+> 回归测试见 `tests/test_abi.cpp` 的 `abi_view_count_agrees_with_query_page`。
 
 ### 查询
 
@@ -340,10 +339,12 @@ pdscope_buf_free(&detail);
 pdscope_close(s);
 ```
 
-## 7. 与 JS 基线的差分口径
+## 7. CSV 口径
 
-- **CSV 逐字节比对**（列名、转义、CRLF、BOM 规则、默认文件名），JSON 按字段语义比对。
+- **列名、转义、CRLF、BOM 规则、默认文件名**都是契约的一部分：改动要同步本文与
+  `tests/test_csv.cpp`。界面「另存为」、桌面版命令行、独立 CLI 三个出口共用同一份实现。
 - 特别要盖住的四件事：CRC「未记录」、UFCS 方向、GoodCRC 配对、`.pdStream` 无 ADC。
+- 与既有实现的逐字节比对见 `tools/csv-diff.mjs`（对方不存在时自动跳过，不算失败）。
 
 ## 8. 改这个接口时的检查单
 

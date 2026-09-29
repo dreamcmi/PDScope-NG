@@ -1,6 +1,6 @@
 // payload.cpp — UFCS 各类消息的载荷逐字段解析（实现见 payload.h）
 //
-// 逐行移植自 PDScope/src/js/ufcs/payload.js。中文字面值原样保留（UTF-8）。
+// 中文字面值原样保留（UTF-8）。
 
 #include "payload.h"
 #include "tables.h"

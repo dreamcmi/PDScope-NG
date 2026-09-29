@@ -6,7 +6,7 @@
 //
 // 这里盯三件事（其余的口径在 core_integration_test 与 ui_smoke_test 里）：
 //   ① 混着一批拖进来时三种来源**都**被识别 —— 特别是 `.pdStream`：
-//      基线的混合拖放漏过这一种，是迁移计划里点名要补的场景
+//      混着拖进来时 `.pdStream` 最容易漏，专门盯一条
 //   ② 坏文件只让**它自己**那个标签变红
 //   ③ 原生菜单的命令与界面上的按钮是**同一套动作**（不是各写一份）
 import 'dart:io';
@@ -169,7 +169,7 @@ void main() {
     expect(
       byName.values,
       contains('pdstream'),
-      reason: '.pdStream 是基线混合拖放漏掉的那一种，必须能认出来',
+      reason: '.pdStream 必须能认出来',
     );
 
     // 「认出来」还不够：没有 ADC 的 .pdStream 也要真的解出报文（只是没有波形）。

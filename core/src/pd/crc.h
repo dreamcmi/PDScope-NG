@@ -1,6 +1,5 @@
 // crc.h — USB PD 报文尾部用的 CRC-32（与 zlib 同多项式 0xEDB88320，反射算法）
 //
-// 对应 JS 源：src/js/pd/crc.js
 // 计算范围：Message Header（2 字节，小端）+ 全部 Data Object（各 4 字节，小端）。
 
 #pragma once

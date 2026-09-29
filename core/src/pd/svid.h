@@ -1,7 +1,5 @@
 // svid.h — Standard/Vendor ID 名称表
 //
-// 对应 JS 源：src/js/pd/svid.js
-
 #pragma once
 
 #include <cstdint>

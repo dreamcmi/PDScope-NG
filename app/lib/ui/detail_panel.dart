@@ -1,8 +1,8 @@
 // detail_panel.dart — 右侧位域详情
 //
-// 结构照搬 JS 基线：
+// 结构：
 //   · 分组靠**哨兵**：核心发来的 `details` 是 `{key,value}[]`，`key == 'Object'`
-//     的那一条当标题（对应 JS 的 `em.object()`），其余是行。这里只做分组与配色，
+//     的那一条当标题，其余是行。这里只做分组与配色，
 //     不猜任何字段含义。
 //   · 相邻分组换色相（8 色循环）+ 左侧色条；`Source_Capabilities` 这种七八个 PDO
 //     的长报文，不读标题也能看出边界。
@@ -58,8 +58,8 @@ class DetailPanel extends StatelessWidget {
           ),
           if (d?.synthetic == true)
             Tooltip(
-              message: '这份报文的逻辑字节来自分析仪导出，不是从电平波形解出来的',
-              child: _tag(p, '分析仪逻辑字节', p.ext),
+              message: '字节来自分析仪导出',
+              child: _tag(p, '分析仪记录', p.ext),
             ),
           const SizedBox(width: 4),
           Tooltip(
@@ -177,7 +177,7 @@ class DetailPanel extends StatelessWidget {
   String _crcText(PacketDetail d) {
     final rec = d.row.crc;
     if (rec == 'none') {
-      return '未记录（分析仪不存 CRC；重算值 0x${d.crcCalc.toRadixString(16).toUpperCase()} 仅供参考）';
+      return '未记录（重算 0x${d.crcCalc.toRadixString(16).toUpperCase()}）';
     }
     final v = d.crcValue == null ? '—' : '0x${d.crcValue!.toRadixString(16).toUpperCase()}';
     return rec == 'ok' ? '通过（$v）' : '失败（记录 $v，重算 0x${d.crcCalc.toRadixString(16).toUpperCase()}）';

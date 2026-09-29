@@ -70,7 +70,7 @@ std::string ufcsFlag(bool on, const std::string& t, const std::string& f) {
 std::string ufcsReserved(const uint8_t* bytes, size_t n, int msb, int lsb) {
   uint32_t raw = ufcsBits(bytes, n, msb, lsb);
   if (raw == 0) return "0（未使用）";
-  // 与 JS 一样是**不补零**大写（`toString(16).toUpperCase()`）—— 别用 hexU(raw, 1) 截断
+  // **不补零**大写 —— 别用 hexU(raw, 1) 截断
   return "0x" + pdscope::hexVar(raw) + " ⚠ 规范要求此域为 0";
 }
 

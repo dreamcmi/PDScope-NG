@@ -15,7 +15,7 @@ namespace pdscope { namespace pd {
 namespace {
 
 /**
- * JS 那一处写的是 `v.toString(16)`（**小写**、不补零）—— 基线就是小写，照抄、别顺手改大写。
+ * **小写**、不补零 —— 同一个字段的呈现必须处处一致，别顺手改成大写。
  */
 std::string hexVarLower(uint32_t v) {
     if (v == 0) return "0";

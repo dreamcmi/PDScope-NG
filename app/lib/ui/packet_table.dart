@@ -1,6 +1,6 @@
 // packet_table.dart — 报文表（虚拟滚动）
 //
-// 列与宽度照搬基线的 `--cols`：
+// 列与宽度：
 //   # / SOP / 报文类型 / ID / 方向 / Obj / 时间 / VBUS-IBUS / 数据hex / 解析详情
 //
 // 布局是「一条横向滚动 + 一条纵向虚拟列表」：
@@ -293,16 +293,12 @@ class _PacketTableState extends State<PacketTable> {
     return null;
   }
 
-  /// 空态：分成「真的没有报文」和「有行但一行都认不出」两种说法（基线如此）。
+  /// 空态：分成「真的没有报文」和「有行但一行都认不出」两种说法。
   Widget _emptyState(Palette p) {
     final st = doc.stats;
     final unlocated = st?.ufcsUnlocatedRows ?? 0;
     if (unlocated > 0) {
-      return _Centered(
-        text: '已读入 $unlocated 行，但没有一行能认出报文',
-        hint: '这份导出里没有能定位出帧的行，容器格式可能与本工具归纳的布局不同。'
-            '模拟量轨迹仍然可用。',
-      );
+      return _Centered(text: '已读入 $unlocated 行，没有一行能定位出报文');
     }
     final filtered = doc.filters.hideGoodCrc ||
         doc.filters.onlyBad ||
@@ -312,7 +308,7 @@ class _PacketTableState extends State<PacketTable> {
         doc.filters.q.isNotEmpty;
     return _Centered(
       text: filtered ? '当前筛选下一行报文都没有' : '这份抓包里没有解出报文',
-      hint: doc.filters.hideGoodCrc ? '试试关掉「屏蔽心跳包」' : null,
+      hint: doc.filters.hideGoodCrc ? '「屏蔽心跳」处于开启状态' : null,
     );
   }
 }

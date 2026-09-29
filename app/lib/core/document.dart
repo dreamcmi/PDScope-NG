@@ -1,16 +1,15 @@
 // document.dart — 一份抓包 = 一个对象
 //
-// 这是 JS 基线「多份抓包 = 一文档一对象」那条约定在 Flutter 侧的落地点：
-// 每份自带筛选、时间窗口、选中行、通道、时间轴档位、进度与错误。
-// 全局偏好（行高、详情宽度、主题、曲线区高度）**不放这里** —— 那是「我怎么看」，
-// 不是「这份数据是什么」，切标签不该变。
+// 「一份抓包 = 一个对象」：每份自带筛选、时间窗口、选中行、通道、时间轴档位、
+// 进度与错误。全局偏好（行高、详情宽度、主题、曲线区高度）**不放这里** ——
+// 那是「我怎么看」，不是「这份数据是什么」，切标签不该变。
 import 'package:flutter/foundation.dart';
 
 import 'engine.dart';
 import 'filters.dart';
 import 'models.dart';
 
-/// 标签状态（对应 JS 标签栏的状态圆点）。
+/// 标签状态（标签栏上的状态圆点）。
 enum DocState {
   opening('打开中'),
   ready('待解码'),
@@ -148,7 +147,7 @@ class CaptureDocument extends ChangeNotifier {
   /// 界面改完筛选条件后叫一声重画。
   ///
   /// `notifyListeners()` 是 protected 的，界面层不该直接碰 —— 那会把「谁能改状态」
-  /// 这层约束绕过去。语义上它对应基线的 `render()`。
+  /// 这层约束绕过去。
   void touch() => notifyListeners();
   bool get hasPackets => rows.total > 0;
   String get protocol => meta?.protocol ?? 'USB PD';

@@ -1,6 +1,6 @@
 // timeline.dart — 底部模拟量时间轴
 //
-// 三件事（都来自基线的行为约定）：
+// 三件事：
 //   · **刷选**：在曲线区拖动选一段时间，表格立即联动（写的是同一个归一化时间窗口，
 //     所以和左侧滑杆、悬停读数是同一套坐标）。
 //   · **两档**：电压/电流 ↔ 差分线（POWER-Z 是 CC1/CC2，UFCS 是 DP/DM）。
@@ -202,17 +202,12 @@ class _TimelineState extends State<Timeline> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '这份抓包没有模拟量轨迹数据',
+          '没有模拟量轨迹',
           style: TextStyle(fontSize: 12, color: p.tx2),
         ),
         const SizedBox(height: 5),
         Text(
-          doc.meta?.isPdStream == true ? '.pdStream 只有报文、没有 ADC 波形' : '容器里没有 ADC 采样表',
-          style: TextStyle(fontSize: 11, color: p.tx3),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          '横轴时间刻度、刷选时间窗口照常可用',
+          '这份文件不含电压 / 电流采样',
           style: TextStyle(fontSize: 11, color: p.tx3),
         ),
       ],
@@ -473,7 +468,7 @@ class _TimelinePainter extends CustomPainter {
       (v) => yFor(v, mainMax),
       p.accent,
     );
-    // 第二路：**用自己的量程铺满同一个像素区域**（与基线一致）。两路单位不同、
+    // 第二路：**用自己的量程铺满同一个像素区域**。两路单位不同、
     // 量级也可能差一个数量级，所以颜色区分 + 悬停读数分别带单位，不共用一条刻度。
     _polyline(
       canvas,

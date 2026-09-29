@@ -7,7 +7,7 @@
 //
 // 所有多字节字段按规范「先发送高字节」的约定解读，位域定位见 format.h#ufcsBits。
 //
-// 注：ufcsDataPayload 的第五个参数 ctxRevText 对应 JS 版 ctx.revText（协议版本文本），
+// 注：ufcsDataPayload 的第五个参数 ctxRevText 是协议版本文本，
 // 当前语义下解析不依赖它，故接收后仅占位；ufcsCustomPayload 的 p 指向「厂家识别码」字段
 // （即整段自定义消息体去掉 2 字节消息头之后），n 为其后字节数 —— 这样可保持与契约一致的签名
 // 且不丢失 vid。

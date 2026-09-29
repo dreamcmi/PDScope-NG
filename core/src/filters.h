@@ -1,6 +1,6 @@
 // filters.h — 报文筛选与排序（视图）
 //
-// 语义对齐 PDScope（JS 基线）的 app.js：筛选改变的是「视图」，不影响报文总数；
+// 筛选改变的是「视图」，不影响报文总数；
 // CSV 导出按当前视图顺序取行。
 #pragma once
 
@@ -10,7 +10,7 @@
 
 namespace pdscope {
 
-/** 报文分类（对应 JS 的 kindOf / toneOf）。 */
+/** 报文分类。 */
 std::string toneOf(const Packet& p);
 std::string packetKind(const Packet& p);
 
@@ -61,7 +61,7 @@ bool passesFilters(const Packet& p, const Filters& f, const std::string& protoco
 
 /**
  * 按当前筛选 + 排序生成视图（存的是报文指针，不复制报文）。
- * 排序语义与 JS 一致：`null` 当 -1；字符串按序比较；数值相减。
+ * 排序语义：`null` 当 -1；字符串按序比较；数值相减。
  */
 std::vector<const Packet*> buildView(const std::vector<Packet>& packets, const Filters& f,
                                      const std::string& protocol, uint64_t totalSamples,

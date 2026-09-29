@@ -1,9 +1,8 @@
 // sqlite_reader.h — 只读 SQLite 读取器（官方 amalgamation，静态链入）
 //
-// 与旧 JS 实现（src/js/core/sqlite.js 里那套自写的 B-tree 读取器）的差别：
-//   计划 §4 明确要求改用官方 SQLite，可读的库格式因此变多；
-//   但**面向用户的语义与错误呈现仍以 PDScope 基线为准**（例如 `pd_table`
-//   不存 CRC 就必须报「未记录」，不能因为重算对上了就报通过）。
+// 用官方 amalgamation 而不是自写 B-tree 读取器：可读的库格式因此变多。
+// 但**面向用户的语义与错误呈现不受实现影响**（例如 `pd_table` 不存 CRC 就必须报
+// 「未记录」，不能因为重算对上了就报通过）。
 //
 // 用法：把整个库文件字节交给构造函数即可（内部用 sqlite3_deserialize 建内存只读库，
 // 不落盘、不改动调用方的字节）。构造失败即抛 pdscope::Error。

@@ -158,7 +158,7 @@ TEST(ufcs_decode_control_uses_container_link) {
     CHECK(p->crcRecorded);
     CHECK_EQ(p->msgId, 2);
     CHECK_EQ(p->header, static_cast<int>((0b010 << 13) | (2u << 9) | (0b000001u << 3)));
-    // UFCS 的帧结构里没有 PD 那样的 EOP 符号（JS 基线给 null）⇒ 如实报「无」
+    // UFCS 的帧结构里没有 PD 那样的 EOP 符号 ⇒ 如实报「无」
     CHECK(!p->eop);
     // 规范字段进详情，容器字段（layout / training / len / counter / dirByte）一律不进
     for (const DetailItem& d : p->details) {
@@ -173,7 +173,7 @@ TEST(ufcs_decode_control_uses_container_link) {
 TEST(ufcs_spec_fixed_direction_beats_container_link) {
     // 规范单向命令优先级最高：Get_Output_Capabilities 恒为 充电设备→供电设备。
     // 这里**故意**给一个相反的链路（D+），方向仍必须是 SNK —— 一旦实现把链路提到
-    // 单向表前面，这条立刻挂。JS 基线同输入也是 SNK（探针实测）。
+    // 单向表前面，这条立刻挂。
     const Bytes body = ctrlFrame(0b001, 1, 0b000001, 0x06 /*Get_Output_Capabilities*/);
     const Bytes full = fxframe::withCrc(body);
 

@@ -192,7 +192,7 @@ std::optional<Packet> PdDecoder::decode(const BmcRawPacket& raw, int channel) {
 
   packetSeq_++;
   const double tms = static_cast<double>(raw.startSample) / sampleRate_ * 1000.0;
-  text_ = "#" + std::to_string(packetSeq_) + " (" + pdscope::jsToFixed(tms, 4) + "ms): ";
+  text_ = "#" + std::to_string(packetSeq_) + " (" + pdscope::toFixedStr(tms, 4) + "ms): ";
   idx_ = static_cast<size_t>(hdrIdx);
   head_ = static_cast<uint16_t>(_short());
   if (head_ == 0x0BAD) return std::nullopt;
@@ -373,10 +373,10 @@ void PdDecoder::_versionHints(int t, bool isExt, int nObjects, const std::string
   if (it != mp->end()) { minv = it->second; hasMin = true; }
   if (hasMin && revNum + 1e-9 < minv) {
     if (revText == "3.x" && minv <= 3.2) {
-      summaryParts_.push_back("（「" + shortm + "」自 PD " + pdscope::jsToFixed(minv, 1) +
+      summaryParts_.push_back("（「" + shortm + "」自 PD " + pdscope::toFixedStr(minv, 1) +
         " 起定义；报文头只能标到 3.x，无法区分 3.0/3.1/3.2）");
     } else {
-      warn("消息类型「" + shortm + "」自 PD " + pdscope::jsToFixed(minv, 1) +
+      warn("消息类型「" + shortm + "」自 PD " + pdscope::toFixedStr(minv, 1) +
         " 起才定义，本包声明为 r" + std::to_string(headRev()), "REV");
     }
   }
@@ -596,7 +596,7 @@ PdDecoder::ExtResult PdDecoder::_readExtended(int t, const std::string& link) {
 Packet PdDecoder::_specialPacket(const BmcRawPacket& raw, int channel) {
   packetSeq_++;
   const double tms = static_cast<double>(raw.startSample) / sampleRate_ * 1000.0;
-  text_ = "#" + std::to_string(packetSeq_) + " (" + pdscope::jsToFixed(tms, 4) + "ms): " + specialPacket_;
+  text_ = "#" + std::to_string(packetSeq_) + " (" + pdscope::toFixedStr(tms, 4) + "ms): " + specialPacket_;
 
   FinishOpts o;
   o.sop = specialPacket_;
@@ -624,7 +624,7 @@ Packet PdDecoder::_specialPacket(const BmcRawPacket& raw, int channel) {
 /* ────────────────────────── 组装 packet ────────────────────────── */
 
 Packet PdDecoder::_finishTail(const FinishOpts& o, const BmcRawPacket& raw, int channel) {
-  // summary 装配（与 JS summaryParts.filter(Boolean).join(' ; ') 一致）
+  // summary 装配：丢掉空片段，用 ' ; ' 连接
   std::string joined;
   for (const auto& p : summaryParts_) {
     if (p.empty()) continue;

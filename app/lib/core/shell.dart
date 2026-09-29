@@ -3,11 +3,10 @@
 // 外壳只做四件**跟操作系统有关**的事：接文件拖放、收命令行与文件关联送来的路径、
 // 把「已经在跑的那个窗口」接上第二次打开、以及挂中文菜单。
 // 它交给 Dart 的**只有路径** —— 是不是抓包、是 ATK-C 还是 POWER-Z，
-// 仍然由核心按内容判定。这条边界与网页版一致（那边的钩子是
-// `window.pdscopeOpenBytes/openUrl`，同样只送内容，不解释内容）。
+// 仍然由核心按内容判定。
 //
-// ⚠ 网页版与 macOS/Linux（外壳还没写）都**没有**这一层，所以通道没人应答
-//   必须降级成「什么都没发生」，不能抛到界面上。
+// ⚠ 没有外壳的平台（macOS/Linux 尚未实现、测试环境）**没有**这一层，
+//   所以通道没人应答必须降级成「什么都没发生」，不能抛到界面上。
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -17,7 +16,7 @@ import 'workspace.dart';
 /// 外壳命令的**唯一派发点**。
 ///
 /// 界面自己订阅它，而不是让每个控件各自去挂通道 —— 菜单项、快捷键、
-/// 以后的网页版钩子都从这里走，行为不会走岔。
+/// 以后的其它入口都从这里走，行为不会走岔。
 class ShellCommands {
   final _queue = <String>[];
   final _listeners = <void Function(String)>[];
@@ -101,7 +100,7 @@ class ShellBridge {
     });
   }
 
-  /// 通道没人应答是**正常情况**（网页版、还没写外壳的平台、测试环境）。
+  /// 通道没人应答是**正常情况**（没有外壳的平台、测试环境）。
   static Future<void> _invoke(String method, [Object? arguments]) async {
     try {
       await _channel.invokeMethod<void>(method, arguments);

@@ -1,17 +1,17 @@
 // prefs.dart — 全局偏好
 //
 // 与「一份抓包是什么」无关、只跟「我怎么看」有关的东西放这里：行高、详情面板宽度、
-// 曲线区高度、筛选栏折叠、主题。JS 基线把这几个存 `localStorage`，切标签不变；
+// 曲线区高度、筛选栏折叠、主题。这几个切标签不变；
 // Flutter 侧同理，放在工作区级别而不是文档级别。
-// 持久化留待后面接平台存储（计划 §3 的偏好口径）。
+// 持久化留待后面接平台存储。
 import 'package:flutter/material.dart';
 
-/// 详情面板宽度的默认 / 上下限（与基线的 390 / 280 / 900 一致）。
+/// 详情面板宽度的默认 / 上下限。
 const double kDetailWidthDefault = 390;
 const double kDetailWidthMin = 280;
 const double kDetailWidthMax = 900;
 
-/// 曲线区的默认 / 上下限（与基线的 158 / 92 一致）。
+/// 曲线区的默认 / 上下限。
 const double kTimelineHeightDefault = 158;
 const double kTimelineHeightMin = 92;
 const double kTimelineHeightMax = 640;
@@ -31,7 +31,7 @@ class Prefs extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 紧凑行高开关（对应基线的「紧凑/舒适行高」）。
+  /// 紧凑行高开关。
   bool get compact => _rowH <= kRowHeightCompact;
   set compact(bool v) => rowH = v ? kRowHeightCompact : kRowHeightNormal;
 
@@ -73,7 +73,7 @@ class Prefs extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 主题。默认亮色（与基线一致：首次打开是亮色）。
+  /// 主题。默认亮色。
   ThemeMode _themeMode = ThemeMode.light;
   ThemeMode get themeMode => _themeMode;
   set themeMode(ThemeMode v) {

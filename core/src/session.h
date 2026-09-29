@@ -104,7 +104,7 @@ public:
     /**
      * @param filtered true（默认）= 导出**当前视图**（受筛选/排序影响），界面「另存为」走这条；
      *                 false = 导出**全部报文**，不受筛选影响 —— 命令行导出走这条，
-     *                 与 JS 基线的 `tools/cli.js --csv`（直接喂全部 packets）逐字节对齐。
+     *                 直接喂全部 packets。
      */
     std::string exportCsv(uint64_t limit, bool bom, bool filtered = true) const;
     std::string exportJson(uint64_t limit) const;

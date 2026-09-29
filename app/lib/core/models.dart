@@ -77,7 +77,7 @@ class PacketRow {
 
 /* ────────────────────────── 详情 ────────────────────────── */
 
-/// 详情面板的一行。`key == 'Object'` 是分组标题哨兵（对应 JS 的 `em.object()`）。
+/// 详情面板的一行。`key == 'Object'` 是分组标题哨兵。
 class DetailItem {
   DetailItem(this.key, this.value);
   final String key;
@@ -139,7 +139,7 @@ class PacketDetail {
   final List<int> dataWords;
   final List<int> dataBytes;
 
-  /// 按 `Object` 哨兵切成分组（对齐 JS 的 `groupDetails()`）。
+  /// 按 `Object` 哨兵切成分组。
   List<DetailGroup> grouped() {
     final out = <DetailGroup>[];
     DetailGroup? cur;

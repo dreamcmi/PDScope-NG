@@ -1,6 +1,6 @@
 // top_bar.dart — 顶栏
 //
-// 信息层级照搬 JS 基线：左边是「这份数据是什么」（文件名、来源 chip、采样率与
+// 信息层级：左边是「这份数据是什么」（文件名、来源 chip、采样率与
 // 它的来源标注、各种计数 chip），右边是「我能做什么」（打开、导出、视图档位、搜索、
 // 主题、关于）。
 //
@@ -148,7 +148,7 @@ class TopBar extends StatelessWidget {
             p.tx2,
             p.panel2,
             tip: st.ufcsEventCodes.isEmpty
-                ? '不承载报文的容器事件行'
+                ? '不含报文的状态事件'
                 : '各 opcode：${st.ufcsEventCodes.map((e) => '0x${e.code.toRadixString(16)}×${e.n}').join('、')}',
           ),
         );
@@ -160,7 +160,7 @@ class TopBar extends StatelessWidget {
             'CRC 未记录 ${st.crcUnknown}',
             p.warn,
             p.warn.withValues(alpha: .13),
-            tip: '分析仪导出没有存 CRC —— 这不是「通过」，是「无从判断」',
+            tip: '导出文件未记录 CRC',
           ),
         );
       }
@@ -175,8 +175,7 @@ class TopBar extends StatelessWidget {
             '通道 ch${pick['picked']}',
             p.tx2,
             p.panel2,
-            tip: '多通道自动挑的；排除了 ${pick['noiseRejected']} 条噪声线'
-                '${pick['allNoisy'] == true ? '（全部候选都像噪声，已取活动度最高的一条）' : ''}',
+            tip: '自动选择；已排除 ${pick['noiseRejected']} 条噪声线',
           ),
         );
       }
@@ -250,11 +249,10 @@ class TopBar extends StatelessWidget {
   static String _rateTip(CaptureMeta? m, DecodeStats st) {
     final lines = <String>[];
     if (m?.samplingFrequencyRaw != null) {
-      lines.add('channel.ini 原文：SamplingFrequency=${m!.samplingFrequencyRaw}');
+      lines.add('文件声明：${m!.samplingFrequencyRaw}');
     }
-    if (m?.sampleRateKey != null) lines.add('取值键：${m!.sampleRateKey}');
     if (st.sampleRateMeasured != null) {
-      lines.add('波形反推：${fmtRate(st.sampleRateMeasured!)}');
+      lines.add('波形实测：${fmtRate(st.sampleRateMeasured!)}');
     }
     if (st.sampleRateNote != null) lines.add(st.sampleRateNote!);
     if (lines.isEmpty) lines.add('来源：${st.sourceTag}');
@@ -276,10 +274,7 @@ void showAboutPdScope(BuildContext context) {
     children: const [
       SizedBox(height: 8),
       Text(
-        'USB Power Delivery / UFCS 抓包分析。'
-        '解析内核为 C++17，界面为 Flutter，二者以稳定的 C ABI 相连。\n\n'
-        '三种来源按内容识别：ATK-C 的 .atkcc（电平采样）、'
-        'POWER-Z 的 .sqlite（报文集）与 .pdStream（无 ADC 波形）。\n\n'
+        'USB Power Delivery / UFCS 抓包分析。\n\n'
         '第三方组件（zlib / SQLite / nlohmann-json / Flutter 等）'
         '各自保留其许可，详见发行包内的 THIRD_PARTY_NOTICES。',
         style: TextStyle(fontSize: 12, height: 1.7),

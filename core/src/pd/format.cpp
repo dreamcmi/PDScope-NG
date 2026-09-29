@@ -47,7 +47,7 @@ std::string pdAscii(const std::vector<uint8_t>& bytes) {
     if (b == 0) break;
     s += (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '·';
   }
-  // 等价于 JS 的 String.prototype.trim()
+  // 按空白字符裁剪两端
   size_t a = 0, b = s.size();
   while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r' || s[a] == '\n')) a++;
   while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) b--;

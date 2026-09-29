@@ -41,7 +41,7 @@ std::string lower(std::string s) {
     return s;
 }
 
-std::string jsToFixed(double v, int digits) {
+std::string toFixedStr(double v, int digits) {
     if (digits < 0) digits = 0;
     if (digits > 100) digits = 100;
 
@@ -72,7 +72,7 @@ std::string jsToFixed(double v, int digits) {
     std::string keep = fpart.substr(0, static_cast<size_t>(digits));
     char guard = (static_cast<int>(fpart.size()) > digits) ? fpart[static_cast<size_t>(digits)] : '0';
 
-    // 哨兵位 ≥ '5' 就进位。因为 JS 在「精确等于 .5」时也进位（远离零），
+    // 哨兵位 ≥ '5' 就进位：口径是「精确等于 .5」也要进位（远离零），
     // 所以这里不必再区分「后面是否还有非零位」。
     if (guard >= '5') {
         int i = static_cast<int>(keep.size()) - 1;
@@ -97,7 +97,7 @@ std::string jsToFixed(double v, int digits) {
         out.push_back('.');
         out += keep;
     }
-    // 结果恰为 0 且原本为负 → JS 给 "-0.000"（保留符号位）
+    // 结果恰为 0 且原本为负 → "-0.000"（保留符号位）
     if (neg) out.insert(out.begin(), '-');
     return out;
 }
@@ -107,7 +107,7 @@ std::string numToStr(double v) {
         if (std::isnan(v)) return "NaN";
         return v > 0 ? "Infinity" : "-Infinity";
     }
-    // 对齐 JS 的 Number.isInteger：数学上是整数（且在可表示范围内）就当整数打印
+    // 数学上是整数（且在可表示范围内）就当整数打印
     if (std::floor(v) == v && std::fabs(v) < 1e21) {
         char buf[64];
         auto r = std::to_chars(buf, buf + sizeof(buf), static_cast<long long>(v));
@@ -166,10 +166,10 @@ std::string asciiOf(const uint8_t* p, size_t n) {
 }
 
 std::string fmtRate(double hz) {
-    // ⚠ 必须走 jsToFixed —— 界面、CSV、CLI 三处显示同一个采样率时，
+    // ⚠ 必须走 toFixedStr —— 界面、CSV、CLI 三处显示同一个采样率时，
     // 数字要逐字符一致。用 printf 的 %.2f 会在「恰好 .5」这类值上给出不同的结果。
-    if (hz >= 1e6) return jsToFixed(hz / 1e6, 2) + " MHz";
-    if (hz >= 1e3) return jsToFixed(hz / 1e3, 2) + " kHz";
+    if (hz >= 1e6) return toFixedStr(hz / 1e6, 2) + " MHz";
+    if (hz >= 1e3) return toFixedStr(hz / 1e3, 2) + " kHz";
     return numToStr(std::round(hz)) + " Hz";
 }
 
@@ -181,7 +181,7 @@ std::string csvClock(double ms) {
     double sec = std::fmod(s, 60.0);
     if (sec < 0) sec += 60.0;
 
-    std::string secStr = jsToFixed(sec, 3);
+    std::string secStr = toFixedStr(sec, 3);
     while (secStr.size() < 6) secStr.insert(secStr.begin(), '0');
 
     char buf[64];

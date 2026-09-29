@@ -20,7 +20,7 @@ namespace pdscope {
 
 using json = nlohmann::json;
 
-// 字节缓冲的统一点（与 JS 侧的 Uint8Array 对齐：允许共享、允许切片）
+// 字节缓冲的统一点：允许共享、允许切片
 using Bytes = std::vector<uint8_t>;
 
 /**
@@ -119,20 +119,20 @@ std::vector<std::string> splitLines(const std::string& text);
 std::string lower(std::string s);
 
 /**
- * `Number.prototype.toFixed` 的等价实现。
+ * 定点小数打印：按第 digits+1 位十进制数字 ≥5 就进位，方向是「远离零」。
  *
- * 实测口径（Node 3.12，见 tests/test_csv.cpp 的回归用例）：
- *   (0.0625).toFixed(3)  === "0.063"      ← 精确的 .5 也要进位
- *   (-0.0625).toFixed(3) === "-0.063"     ← 方向是「远离零」，不是「取较大整数」
- *   (1.005).toFixed(2)   === "1.00"       ← 二进制里它其实小于 1.005，够不着 .5
+ * 口径（回归用例见 tests/test_csv.cpp）：
+ *   (0.0625, 3)  → "0.063"     ← 精确的 .5 也要进位
+ *   (-0.0625, 3) → "-0.063"    ← 方向是「远离零」，不是「取较大整数」
+ *   (1.005, 2)   → "1.00"      ← 二进制里它其实小于 1.005，够不着 .5
  * 也就是「按第 digits+1 位十进制数字 ≥5 就进位、且先取绝对值」。
  *
  * 实现上先让 printf 展开到 digits+30 位再判定，避免只展开一位时发生
  * **二次舍入**（例如 0.014999 在 2 位下会被先舍成 0.015 从而误进位）。
  */
-std::string jsToFixed(double v, int digits);
+std::string toFixedStr(double v, int digits);
 
-/** 数字 → 字符串，整数不带小数点、浮点最多 3 位（对齐 JS 的 pdNum）。 */
+/** 数字 → 字符串，整数不带小数点、浮点最多 3 位。 */
 std::string numToStr(double v);
 inline std::string numToStr(int64_t v) { return std::to_string(v); }
 inline std::string numToStr(uint64_t v) { return std::to_string(v); }
@@ -141,7 +141,7 @@ inline std::string numToStr(uint64_t v) { return std::to_string(v); }
 std::string hexU(uint64_t v, int digits);
 
 /**
- * **不补零**的大写十六进制，对齐 JS 的 `n.toString(16).toUpperCase()`（0 输出 `0`）。
+ * **不补零**的大写十六进制（0 输出 `0`）。
  * ⚠ 别用 `hexU(v, 1)` 代替：`hexU` 是按 digits 定宽截断的，`0x1AB` 会只剩 `0xB`。
  */
 std::string hexVar(uint64_t v);

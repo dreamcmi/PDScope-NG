@@ -1,8 +1,8 @@
 // test_csv.cpp — CSV 与数字格式化：这是**三个出口共用**的那一份实现，
 // 所以这里订的是契约而不是实现细节：列名、转义、行尾、BOM、CRC 三态怎么写。
 //
-// `jsToFixed` 那一组用例直接把 Node 的实测结果钉住（含负数与「远离零」的进位方向）——
-// 界面里的量、CSV 里的量都必须与 JS 基线逐字符一致，否则同一份抓包两种出口的数字会不同。
+// `toFixedStr` 那一组用例把进位方向钉死（含负数与「远离零」）—— 界面、CSV、CLI
+// 三个出口共用这一份实现，数字必须逐字符一致，否则同一份抓包换个出口就对不上。
 
 #include "test.h"
 
@@ -53,24 +53,24 @@ size_t countCells(const std::string& line) {
 
 }  // namespace
 
-TEST(csv_js_to_fixed_matches_node) {
+TEST(csv_to_fixed_semantics) {
     // 实测口径（Node 的 Number.prototype.toFixed）：先取绝对值，
     // 按第 digits+1 位十进制数字 ≥5 就进位 —— 包括精确的 .5。
-    CHECK_EQ(jsToFixed(0.0625, 3), std::string("0.063"));
-    CHECK_EQ(jsToFixed(-0.0625, 3), std::string("-0.063"));
-    CHECK_EQ(jsToFixed(1.005, 2), std::string("1.00"));     // 二进制里小于 1.005，够不着 .5
-    CHECK_EQ(jsToFixed(0.0, 3), std::string("0.000"));
-    CHECK_EQ(jsToFixed(-0.0, 3), std::string("0.000"));     // -0 不该出现负号
-    CHECK_EQ(jsToFixed(1.5, 0), std::string("2"));
-    CHECK_EQ(jsToFixed(2.5, 0), std::string("3"));
-    CHECK_EQ(jsToFixed(-2.5, 0), std::string("-3"));
-    CHECK_EQ(jsToFixed(1.2345, 3), std::string("1.234"));   // 二进制里实为 1.23449999…，够不着 .5
-    CHECK_EQ(jsToFixed(9.9995, 3), std::string("9.999"));   // 同理实为 9.99949999…
+    CHECK_EQ(toFixedStr(0.0625, 3), std::string("0.063"));
+    CHECK_EQ(toFixedStr(-0.0625, 3), std::string("-0.063"));
+    CHECK_EQ(toFixedStr(1.005, 2), std::string("1.00"));     // 二进制里小于 1.005，够不着 .5
+    CHECK_EQ(toFixedStr(0.0, 3), std::string("0.000"));
+    CHECK_EQ(toFixedStr(-0.0, 3), std::string("0.000"));     // -0 不该出现负号
+    CHECK_EQ(toFixedStr(1.5, 0), std::string("2"));
+    CHECK_EQ(toFixedStr(2.5, 0), std::string("3"));
+    CHECK_EQ(toFixedStr(-2.5, 0), std::string("-3"));
+    CHECK_EQ(toFixedStr(1.2345, 3), std::string("1.234"));   // 二进制里实为 1.23449999…，够不着 .5
+    CHECK_EQ(toFixedStr(9.9995, 3), std::string("9.999"));   // 同理实为 9.99949999…
     // 上面两条是**照着 Node 实测**钉的，别按数学预期改成 1.235 / 10.000：
     // 十进制短写 1.2345 落到 double 上并不等于 1.2345（exact=1.2344999999999999307）。
     // 二次舍入陷阱：展开到 3 位时 0.014999 会被先舍成 0.015 从而误进位
-    CHECK_EQ(jsToFixed(0.014999, 2), std::string("0.01"));
-    CHECK_EQ(jsToFixed(5.0, 4), std::string("5.0000"));
+    CHECK_EQ(toFixedStr(0.014999, 2), std::string("0.01"));
+    CHECK_EQ(toFixedStr(5.0, 4), std::string("5.0000"));
 }
 
 TEST(csv_clock_format) {
@@ -231,8 +231,8 @@ TEST(csv_export_doc_reports_what_matters) {
     CHECK(saidLimited);
 }
 
-TEST(csv_hex_var_is_unpadded_like_js) {
-    // 对齐 JS 的 `n.toString(16).toUpperCase()`：**不补零**，0 输出 "0"。
+TEST(csv_hex_var_is_unpadded) {
+    // **不补零**，0 输出 "0"。
     // 这条是专门防「拿 hexU(v,1) 顶替」的：hexU 是定宽截断，digits=1 只留最低一个
     // nibble ⇒ 0x1AB 静默变 "B"。曾因此让多条 Reserved / 私有载荷 字段显示错误。
     CHECK_EQ(hexVar(0), std::string("0"));

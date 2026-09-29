@@ -106,7 +106,7 @@ bool passesFilters(const Packet& p, const Filters& f, const std::string& protoco
 
 namespace {
 
-/** 排序取值：`null` 当 -1（与 JS 的 `if (x == null) x = -1` 一致）。 */
+/** 排序取值：`null` 当 -1。 */
 struct SortValue {
     bool isNumber = true;
     double num = -1;
@@ -134,7 +134,7 @@ SortValue sortValueOf(const Packet& p, const std::string& k) {
     else if (k == "summary") text(p.summary);
     else if (k == "msgId") { if (p.hasMsgId) number(p.msgId); else number(-1); }
     else if (k == "crcOk") {
-        // JS 里 crcOk 是三态布尔；映射成 -1(null) / 0(false) / 1(true)
+        // crcOk 是三态；映射成 -1(null) / 0(false) / 1(true)
         if (p.crcOk == CrcState::Unrecorded) number(-1);
         else number(p.crcOk == CrcState::Ok ? 1 : 0);
     }

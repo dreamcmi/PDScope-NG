@@ -1,10 +1,10 @@
 // main.cpp — 独立命令行：无图形环境下解析抓包并导出 CSV / JSON。
 //
-// 这是 PDScope-NG 的「核心与 CLI 先落地」那一半的一半：不依赖 Flutter、不依赖窗口系统，
-// 在 CI 与服务器上都能跑。解析走的就是核心静态库（`pdscope_core`），
-// 与 Dart FFI 经 C ABI 调用的是同一份实现，所以这里跑出来的结果就是界面里看到的结果。
+// 不依赖 Flutter、不依赖窗口系统，CI 与服务器上都能跑。解析走的就是核心静态库
+// （`pdscope_core`），与 Dart FFI 经 C ABI 调用的是同一份实现 —— 所以命令行里跑出来的
+// 结果就是界面里看到的结果。
 //
-// 用法（对齐 PDScope 的 `tools/cli.js` 与桌面版 `--csv`）：
+// 用法（与桌面版 `--csv` 同一套口径）：
 //   pdscope-cli <抓包> [--csv [路径]] [--out 路径| -] [--channel N] [--limit N]
 //                       [--bom|--no-bom] [--json] [--channels] [--rate HZ]
 //   pdscope-cli --help | --version
@@ -33,7 +33,7 @@
 namespace {
 
 using pdscope::Bytes;
-using pdscope::jsToFixed;
+using pdscope::toFixedStr;
 using pdscope::Packet;
 using pdscope::Session;
 using pdscope::csvClock;
@@ -51,7 +51,7 @@ void initConsole() {
     ::SetConsoleOutputCP(65001);
     // ⚠ 同时把标准输出/错误切到**二进制**模式。CRT 默认的文本模式会把我们写出的每个
     //   '\n' 再补一个 '\r'，而 CSV 自身行尾已经是 CRLF ⇒ 落盘变成 `\r\r\n`
-    //   （与 JS 基线逐字节比对时一眼可见，Excel 打开也会多出空行）。
+    //   （Excel 打开会多出空行）。
     //   本程序全程按 UTF-8 裸字节写、不做代码页转换，二进制模式正是想要的语义。
     ::_setmode(::_fileno(stdout), _O_BINARY);
     ::_setmode(::_fileno(stderr), _O_BINARY);
@@ -127,18 +127,18 @@ std::string helpText() {
         "  --csv [路径]      导出 CSV。省略路径 = 与输入同目录的 <名字>-ch<通道>.csv；\n"
         "                    `-` = 打到标准输出（此时提示语走标准错误）\n"
         "  --out <路径>      同 `--csv <路径>`\n"
-        "  --channel <N>     指定通道（多通道 .atkcc 默认自动挑「像 CC 线」的那条）\n"
-        "  --rate <HZ>       强制采样率，覆盖「文件声明 → 波形自检 → 兜底」三级策略\n"
+        "  --channel <N>     指定通道（多通道 .atkcc 默认自动选择）\n"
+        "  --rate <HZ>       强制采样率（覆盖文件声明与自动检测）\n"
         "  --limit <N>       只输出/导出前 N 条报文\n"
         "  --bom / --no-bom  强制带 / 不带 UTF-8 BOM（默认：写文件带、走管道不带）\n"
         "  --channels        只列出通道清单后退出\n"
         "  -h, --help        显示本帮助\n"
         "  -V, --version     显示版本\n"
         "\n"
-        "抓包格式按**文件内容**自动分流，不看扩展名：\n"
-        "  · 正点原子 ATK-C 的 .atkcc（CC 线原始电平采样 → BMC → 4B5B → PD 报文）\n"
-        "  · POWER-Z 分析仪导出的 .sqlite（USB PD 或 UFCS，按表名分流）\n"
-        "  · .pdStream（只有报文的记录流，不含 ADC 波形）\n"
+        "支持的文件：\n"
+        "  · .atkcc      ATK-C 的 CC 线电平采样\n"
+        "  · .sqlite     POWER-Z 分析仪导出（USB PD / UFCS）\n"
+        "  · .pdStream   只有报文的记录流\n"
         "\n"
         "CSV 一律是 UTF-8：写文件带 BOM（Excel / WPS 双击即正确），走管道不带。\n"
         "退出码：0 成功 · 1 导出失败（文件坏了 / 写不进去） · 2 用法不对\n";
@@ -287,7 +287,7 @@ void printTable(const Session& s, uint64_t limit, bool verbose) {
         line += pad(p.hasMsgId ? std::to_string(p.msgId) : "", 3) + " ";
         line += pad(p.role, 6) + " ";
         line += pad(csvClock(p.timeMs), 15) + " ";
-        line += pad(jsToFixed(p.vbus, 3) + "V/" + jsToFixed(p.ibus, 3) + "A", 18) + " ";
+        line += pad(toFixedStr(p.vbus, 3) + "V/" + toFixedStr(p.ibus, 3) + "A", 18) + " ";
         line += pad(p.dataHex, 40) + " ";
         line += p.summary;
         say(line);
@@ -461,8 +461,8 @@ int runCli(std::vector<std::string> raw) {
         else if (a.out == Out::Stdout) wantBom = stdoutIsFile();
         else wantBom = true;
 
-        // 命令行导出**不过筛选**：与 JS 基线的 `tools/cli.js --csv`（直接喂全部 packets）
-        // 逐字节对齐，也不会出现「表格里 88 条、导出来只有 44 行」这种自相矛盾。
+        // 命令行导出**不过筛选**：直接喂全部 packets，不会出现「表格里 88 条、
+        // 导出来只有 44 行」这种自相矛盾。
         // 界面「另存为」走的是 exportCsv 的默认参数（导出当前视图）。
         const std::string csvText = session->exportCsv(a.limit, wantBom, /*filtered=*/false);
         // 导出的行数 = 全部报文条数，再被 --limit 截断

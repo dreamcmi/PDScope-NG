@@ -1,7 +1,6 @@
 // format.h — 位域取值与文本格式化的小工具（PD 库共用）
 //
-// 对应 JS 源：src/js/pd/format.js
-// 所有顶层名字都带 `pd` 前缀（与 JS 库一致）。
+// 所有顶层名字都带 `pd` 前缀。
 
 #pragma once
 
@@ -39,11 +38,11 @@ inline std::string pdHex(uint32_t v, int digits = 8) {
 }
 
 /**
- * **不补零**的大写十六进制，对齐 JS 的 `n.toString(16).toUpperCase()`。
+ * **不补零**的大写十六进制。
  *
  * ⚠ 别拿 `pdHex(v, 1)` / `hexU(v, 1)` 顶替：`hexU` 是**定宽**的，digits=1 只留最低
  *   一个 nibble ⇒ `0x1AB` 会静默变成 `0xB`、`Reserved [B12-0]` 写 0x1234 只剩 `0x4`。
- *   JS 基线这类位置一律是不补零写法，所以凡是「Reserved / 任意宽度值」都要走这个。
+ *   凡是「Reserved / 任意宽度值」都要走这个。
  */
 inline std::string pdHexVar(uint32_t v) { return pdscope::hexVar(v); }
 

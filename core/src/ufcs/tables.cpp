@@ -1,7 +1,6 @@
 // tables.cpp — UFCS 协议常量表（实现见 tables.h）
 //
-// 全部数据照抄自 PDScope/src/js/ufcs/tables.js（实测归纳 + 规范表 13/14/15/16/22/24/26）。
-// 中文字面值原样保留（UTF-8）。
+// 表数据来自实测归纳 + 规范表 13/14/15/16/22/24/26，中文字面值原样保留（UTF-8）。
 
 #include "tables.h"
 

@@ -1,6 +1,5 @@
 // decoder.h — USB Power Delivery 报文解码器（独立库的主入口）
 //
-// 对应 JS 源：src/js/pd/decoder.js
 // 命名空间：pdscope::pd
 //
 // 公共接口（契约，不可改）：

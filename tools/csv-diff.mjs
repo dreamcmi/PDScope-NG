@@ -1,29 +1,26 @@
 #!/usr/bin/env node
 /**
- * diff-against-js.mjs — 与 JS 基线（`../PDScope/tools/cli.js`）做**逐字节** CSV 差分
- *
- * 迁移计划 §2 的验收口径：
- *   「用同一批样例与 JS 输出差分。CSV 需逐字节核对。」
+ * csv-diff.mjs — 把本工具导出的 CSV 与 `../PDScope/tools/cli.js` 的输出**逐字节**对比
  *
  * 为什么盯 CSV：
  *   · CSV 是三个出口（界面「另存为」、桌面版命令行、独立 CLI）**共用**的那份实现，
  *     它的每一列都直接映射到报文的语义字段（序号 / 有序集 / 类型 / ID / 方向 /
  *     对象数 / 时间 / VBUS·IBUS / 数据字节 / CRC / 摘要）——
- *     它一字节不差，等于这些字段与基线逐字符一致；
+ *     它一字节不差，等于这些字段逐字符一致；
  *   · 反过来，只要有一个字段的**格式**（补零、大小写、小数位、时间戳写法）漂了，
- *     这里立刻红。实测已经靠它抓到过：`\r\r\n`、`SID`/`SVID`、不补零十六进制被截断、
+ *     这里立刻红。实测靠它抓到过：`\r\r\n`、`SID`/`SVID`、不补零十六进制被截断、
  *     以及「命令行导出误套筛选」四类问题。
  *
- * JSON 不在这里比：JS 的 `cli.js --json` 直接 dump 内部对象，形状与 C++ 的
- * FFI 对外 schema 本就不同（连字段集都不一样），逐字节没有意义。
+ * JSON 不在这里比：对方 `--json` 直接 dump 内部对象，形状与本工具 FFI 对外 schema
+ * 本就不同（连字段集都不一样），逐字节没有意义。
  *
  * 用法：
- *   node tools/diff-against-js.mjs                 # 自动扫上级目录的 *.atkcc / *.sqlite
- *   node tools/diff-against-js.mjs a.atkcc b.sqlite
- *   node tools/diff-against-js.mjs --js ../PDScope --bin build/out/pdscope-cli.exe
- *   node tools/diff-against-js.mjs --keep          # 保留临时 CSV 便于肉眼比对
+ *   node tools/csv-diff.mjs                 # 自动扫上级目录的 *.atkcc / *.sqlite
+ *   node tools/csv-diff.mjs a.atkcc b.sqlite
+ *   node tools/csv-diff.mjs --ref ../PDScope --bin build/out/pdscope-cli.exe
+ *   node tools/csv-diff.mjs --keep          # 保留临时 CSV 便于肉眼比对
  *
- * 退出码：0 = 全部一致（或基线不存在，跳过）；1 = 有差异或运行失败。
+ * 退出码：0 = 全部一致（或参照实现不存在，跳过）；1 = 有差异或运行失败。
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -38,7 +35,7 @@ const SAMPLES_DIR = path.resolve(NG_ROOT, '..');   // ATKDecom/（抓包样本�
 /* ────────────────────────── 参数 ────────────────────────── */
 
 const args = process.argv.slice(2);
-let jsDir = path.resolve(NG_ROOT, '..', 'PDScope');
+let refDir = path.resolve(NG_ROOT, '..', 'PDScope');
 let bin = path.join(NG_ROOT, 'build', 'out',
                     process.platform === 'win32' ? 'pdscope-cli.exe' : 'pdscope-cli');
 let keep = false;
@@ -46,7 +43,7 @@ const files = [];
 
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
-  if (a === '--js') jsDir = path.resolve(process.cwd(), args[++i]);
+  if (a === '--ref') refDir = path.resolve(process.cwd(), args[++i]);
   else if (a === '--bin') bin = path.resolve(process.cwd(), args[++i]);
   else if (a === '--keep') keep = true;
   else if (a === '-h' || a === '--help') {
@@ -57,13 +54,13 @@ for (let i = 0; i < args.length; i++) {
 
 /* ────────────────────────── 前置检查 ────────────────────────── */
 
-const jsCli = path.join(jsDir, 'tools', 'cli.js');
-if (!existsSync(jsCli)) {
-  console.log(`[skip] 找不到 JS 基线 ${jsCli} —— 本机没装基线时跳过差分（不算失败）`);
+const refCli = path.join(refDir, 'tools', 'cli.js');
+if (!existsSync(refCli)) {
+  console.log(`[skip] 找不到参照实现 ${refCli} —— 本机没有它时跳过差分（不算失败）`);
   process.exit(0);
 }
 if (!existsSync(bin)) {
-  console.error(`[fail] 找不到 C++ CLI：${bin}\n       先构建：cmake --build build`);
+  console.error(`[fail] 找不到本工具 CLI：${bin}\n       先构建：cmake --build build`);
   process.exit(1);
 }
 
@@ -87,16 +84,16 @@ function run(cmd, argv) {
   return execFileSync(cmd, argv, { maxBuffer: MAXBUF, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
-/** JS 基线：`--csv` 打到标准输出，本来就不带 BOM。 */
-function jsCsv(file) {
-  return run(process.execPath, [jsCli, file, '--csv']);
+/** 参照实现：`--csv` 打到标准输出，本来就不带 BOM。 */
+function refCsv(file) {
+  return run(process.execPath, [refCli, file, '--csv']);
 }
 
 /**
- * C++ CLI：`--csv -` 打到标准输出。**必须 `--no-bom`** —— 输出被重定向到文件时
- * 它默认会按「落盘」加 BOM，而基线这条路径是不带 BOM 的。
+ * 本工具 CLI：`--csv -` 打到标准输出。**必须 `--no-bom`** —— 输出被重定向到文件时
+ * 它默认会按「落盘」加 BOM，而这条路径是不带 BOM 的。
  */
-function cppCsv(file) {
+function ownCsv(file) {
   return run(bin, [file, '--csv', '-', '--no-bom']);
 }
 
@@ -121,9 +118,9 @@ function describe(a, b, off) {
     return (s[ln - 1] ?? '').slice(0, 200);
   };
   const la = lineOf(a, off), lb = lineOf(b, off);
-  const lines = [`        首个差异字节偏移 ${off}（JS 第 ${la} 行 / C++ 第 ${lb} 行）`];
-  lines.push(`        JS  : ${lineText(a, la)}`);
-  lines.push(`        C++ : ${lineText(b, lb)}`);
+  const lines = [`        首个差异字节偏移 ${off}（参照第 ${la} 行 / 本工具第 ${lb} 行）`];
+  lines.push(`        参照  : ${lineText(a, la)}`);
+  lines.push(`        本工具: ${lineText(b, lb)}`);
   return lines.join('\n');
 }
 
@@ -135,15 +132,15 @@ try {
     const name = path.basename(file);
     let a, b;
     try {
-      a = jsCsv(file);
+      a = refCsv(file);
     } catch (e) {
-      console.log(`  ⚠ ${name}  JS 基线自己就没跑通，跳过（${String(e.stderr || e.message).trim().slice(0, 120)}）`);
+      console.log(`  ⚠ ${name}  参照实现自己就没跑通，跳过（${String(e.stderr || e.message).trim().slice(0, 120)}）`);
       continue;
     }
     try {
-      b = cppCsv(file);
+      b = ownCsv(file);
     } catch (e) {
-      console.log(`  ✗ ${name}  C++ CLI 失败：${String(e.stderr || e.message).trim().slice(0, 200)}`);
+      console.log(`  ✗ ${name}  本工具 CLI 失败：${String(e.stderr || e.message).trim().slice(0, 200)}`);
       fail++;
       continue;
     }
@@ -153,11 +150,11 @@ try {
       console.log(`  ✓ ${name}  ${b.length} 字节逐字节一致`);
       pass++;
     } else {
-      console.log(`  ✗ ${name}  JS=${a.length} C++=${b.length} 字节`);
+      console.log(`  ✗ ${name}  参照=${a.length} 本工具=${b.length} 字节`);
       console.log(describe(a, b, off));
       if (keep) {
-        const pa = path.join(tmp, `js-${name}.csv`);
-        const pb = path.join(tmp, `cpp-${name}.csv`);
+        const pa = path.join(tmp, `ref-${name}.csv`);
+        const pb = path.join(tmp, `mine-${name}.csv`);
         writeFileSync(pa, a);
         writeFileSync(pb, b);
         console.log(`        对比文件：${pa}\n                  ${pb}`);

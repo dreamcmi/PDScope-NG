@@ -171,8 +171,7 @@ std::unique_ptr<PowerzCapture> openPdStream(const Bytes& bytes) {
     m.pageSize = m.pageCount = m.textEncoding = m.writeVersion = 0;
     m.busLabelA.clear();                // 没有第三、第四路模拟量 → 也没有「差分线」档
     m.busLabelB.clear();
-    m.sampleRateNote = "POWER-Z 的 .pdStream 只有报文与毫秒时间戳，没有 ADC 波形；"
-                       "时间轴按「1 采样点 = 1 ms」映射（与同名的 .sqlite 一致）";
+    m.sampleRateNote = "没有 ADC 波形；时间轴按 1 采样点 = 1 ms";
     return cap;
 }
 

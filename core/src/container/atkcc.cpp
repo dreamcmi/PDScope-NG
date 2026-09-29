@@ -64,7 +64,7 @@ bool parseSignedNumber(const std::string& s, size_t& p, double& out) {
     return true;
 }
 
-/** 在 s 里按大小写不敏感匹配字面量 word（不在词首做边界要求，与 JS 的 /i 一致）。 */
+/** 在 s 里按大小写不敏感匹配字面量 word（不在词首做边界要求）。 */
 bool matchWordCI(const std::string& s, size_t& p, const char* word) {
     size_t n = std::strlen(word);
     if (p + n > s.size()) return false;

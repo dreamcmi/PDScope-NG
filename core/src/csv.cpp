@@ -21,7 +21,7 @@ std::string csvCell(const std::string& c) {
 /** `(Number.isFinite(v) ? v : 0).toFixed(digits)` */
 std::string numFixed(double v, int digits) {
     if (!std::isfinite(v)) v = 0;
-    return jsToFixed(v, digits);
+    return toFixedStr(v, digits);
 }
 
 /** 导出时该如实说的事。只写会影响「这份 CSV 怎么读」的事实，不堆统计数字。 */
@@ -105,7 +105,7 @@ std::vector<std::string> csvRow(const Packet& p, const std::string& protocol) {
     row.push_back(p.role);
     row.push_back(ufcs ? std::to_string(p.dataLen) : std::to_string(p.nObjects));
     row.push_back(csvClock(p.timeMs));
-    row.push_back(std::isfinite(p.timeMs) ? jsToFixed(p.timeMs, 4) : std::string());
+    row.push_back(std::isfinite(p.timeMs) ? toFixedStr(p.timeMs, 4) : std::string());
     row.push_back(numFixed(p.vbus, 4));
     row.push_back(numFixed(p.ibus, 4));
     row.push_back(p.dataHex);

@@ -22,7 +22,7 @@ struct BmcRawPacket {
     std::vector<uint8_t> wireBytes;
 };
 
-/** 详情面板的一行。`key == "Object"` 是分组标题哨兵（对应 JS 的 em.object()）。 */
+/** 详情面板的一行。`key == "Object"` 是分组标题哨兵。 */
 struct DetailItem {
     std::string key;
     std::string value;
@@ -125,7 +125,7 @@ struct Packet {
     bool isBadCrc() const { return crcOk == CrcState::Bad; }
 };
 
-/** 详情发射器：对齐 JS 的 em.object() / em.detail() / em.note() 语义。 */
+/** 详情发射器：object() / detail() / note() 三个语义。 */
 struct DetailEmitter {
     std::vector<DetailItem>* details = nullptr;
     std::vector<std::string>* summaryParts = nullptr;

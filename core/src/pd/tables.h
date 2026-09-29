@@ -1,6 +1,5 @@
 // tables.h — USB PD 协议常量表
 //
-// 对应 JS 源：src/js/pd/tables.js
 // 表里只放「规范原文怎么写」，不做任何推导；推导逻辑在各自的解析模块里。
 
 #pragma once

@@ -218,7 +218,7 @@ void PowerzCapture::buildMeta() {
 
     meta_.sampleRate = kPowerzRate;
     meta_.sampleRateSource = "powerz";
-    meta_.sampleRateNote = "POWER-Z 导出的是毫秒时间戳，没有采样点波形；时间轴按「1 采样点 = 1 ms」映射";
+    meta_.sampleRateNote = "没有采样点波形；时间轴按 1 采样点 = 1 ms";
     meta_.totalSamples = tMax;
     meta_.durationSec = static_cast<double>(tMax) / kPowerzRate;
 

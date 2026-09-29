@@ -1,9 +1,9 @@
 // app.dart — 应用外壳：主题、总体布局、快捷键
 //
-// 布局与 JS 基线一致（自上而下、左右分栏）：
+// 布局（自上而下、左右分栏）：
 //   顶栏 / 标签栏 / ┌ 左筛选 │ 中（提示条 · 报文表 · 拖条 · 时间轴） │ 右详情 ┐ / 状态栏
 //
-// 两条来自基线的硬约定：
+// 两条硬约定：
 //   · 尺寸一律走 [Prefs]（行高、详情宽、曲线区高），拖动改的是偏好，不是某个文档的状态。
 //   · 详情收起后右缘必须留一条**不依赖数据**的竖栏，否则「一行报文都没有」的抓包
 //     一旦收起面板就再也打不开了。
@@ -157,7 +157,7 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  /// 键盘：与基线一致的那几个入口。
+  /// 键盘快捷键。
   ///
   /// ⚠ 字母快捷键只在「没在输入框里」时才认 —— 否则在搜索框里打一个 `t`
   /// 会顺手把主题切了。
@@ -543,8 +543,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           Text(
-            '支持 ATK-C 的 .atkcc、POWER-Z 的 .sqlite 与 .pdStream\n'
-            '格式按内容判定，不看扩展名',
+            '支持 .atkcc、.sqlite、.pdStream',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11.5, color: p.tx3, height: 1.7),
           ),
