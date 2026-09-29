@@ -63,9 +63,9 @@ jobs:
           cache: true
 
       # ── 定产物版本段 ───────────────────────────────────────────
-      # 推 v* 标签（发版）就是纯版本号（v1.0.0），普通推送则是
-      # v1.0.0_<8 位短 commit>_<YYYYMMDD>，一眼看出是哪次提交、哪天出的。
-      # 版本号从 app/pubspec.yaml 读（core 的 CMakeLists.txt 同源 1.0.0）。
+      # 推 v* 标签（发版）就是纯版本号（v0.1.0），普通推送则是
+      # v0.1.0_<8 位短 commit>_<YYYYMMDD>，一眼看出是哪次提交、哪天出的。
+      # 版本号从 app/pubspec.yaml 读。
       - name: 定产物版本段
         shell: bash
         run: |
@@ -86,14 +86,13 @@ jobs:
       # 若改用 VS 多配置生成器，产物会多套一层 Release/ 子目录，导致 runner 里
       # 写死的 build/out/pdscope.dll 路径对不上、拷不进 exe 目录。
       # tools/msvc-env.sh 是本机受限环境专用的探测脚本，CI 里不适用。
-      - name: 激活 MSVC 工具链
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.arch }}
-
+      # 这里用 runner 自带的 vswhere 动态定位 VS，再 call vcvars64 激活 MSVC；
+      # vcvars 只对当前 cmd 会话生效，所以「激活 + cmake 配置 + 构建」必须在同一个 step。
       - name: 配置并构建 C++ 核心
-        shell: bash
+        shell: cmd
         run: |
+          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSPATH=%%i
+          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" >nul
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
