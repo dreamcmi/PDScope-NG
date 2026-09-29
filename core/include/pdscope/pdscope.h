@@ -40,7 +40,7 @@ extern "C" {
 /** ABI 版本。接口任何不兼容改动都要 +1；Dart 侧先比对再调用。 */
 #define PDSCOPE_ABI_VERSION 1u
 
-/** 库自身的版本字符串（如 "1.0.0"），静态存储，不需要释放。 */
+/** 库自身的版本字符串（如 "0.1.0"），静态存储，不需要释放。 */
 PDSCOPE_API const char* PDSCOPE_CALL pdscope_version(void);
 
 /** 返回编译期写定的 ABI 版本，用于运行期比对。 */

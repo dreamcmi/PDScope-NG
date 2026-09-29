@@ -3,7 +3,7 @@ description: "PDScope 桌面版 —— USB PD / UFCS 抓包分析（Flutter 界�
 publish_to: 'none'
 
 # 版本号与 core 的 CMakeLists.txt / 发行包保持一致（改一处要一起改）。
-version: 1.0.0+1
+version: 0.1.0+1
 
 environment:
   sdk: ^3.12.2
