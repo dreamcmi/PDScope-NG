@@ -379,8 +379,9 @@ class PdscopeBindings {
     final buf = calloc<PdscopeBuf>();
     try {
       final st = call(buf);
-      if (st != Status.ok)
+      if (st != Status.ok) {
         throw PdscopeException('调用失败（${statusName(st)}）', st);
+      }
       final ref = buf.ref;
       if (ref.data == nullptr || ref.len == 0) return '';
       return utf8.decode(ref.data.asTypedList(ref.len));
@@ -395,8 +396,9 @@ class PdscopeBindings {
     final buf = calloc<PdscopeBuf>();
     try {
       final st = call(buf);
-      if (st != Status.ok)
+      if (st != Status.ok) {
         throw PdscopeException('调用失败（${statusName(st)}）', st);
+      }
       final ref = buf.ref;
       if (ref.data == nullptr || ref.len == 0) return Uint8List(0);
       return Uint8List.fromList(ref.data.asTypedList(ref.len));
