@@ -18,6 +18,7 @@ import 'package:pdscope_app/core/engine.dart';
 import 'package:pdscope_app/core/prefs.dart';
 import 'package:pdscope_app/core/shell.dart';
 import 'package:pdscope_app/core/workspace.dart';
+import 'sample_fixture.dart';
 import 'package:pdscope_app/ui/app.dart';
 
 const MethodChannel _shellChannel = MethodChannel('pdscope/shell');
@@ -43,11 +44,7 @@ Future<void> _fromShell(String method, Object? arguments) async {
 
 /// 找一份本机样本；找不到返回 null（私有抓包不在仓库里，缺失是正常情况）。
 String? _sample(String name) {
-  for (final base in ['..', '.', '../..']) {
-    final f = File('$base${Platform.pathSeparator}$name');
-    if (f.existsSync()) return f.absolute.path;
-  }
-  return null;
+  return sampleFixture(name);
 }
 
 /// `.pdStream` 样本在老工程那边（合成的那份只有 8 条报文，稳定又小）。
@@ -141,7 +138,8 @@ void main() {
           workspace.docs.length == before + paths.length &&
           workspace.docs
               .skip(before)
-              .every((d) => d.state == DocState.done || d.state == DocState.failed),
+              .every((d) => d.state != DocState.opening && d.state != DocState.decoding) &&
+          workspace.docs.last.state == DocState.done,
     );
 
     final opened = workspace.docs.sublist(before);
@@ -160,14 +158,11 @@ void main() {
       isTrue,
       reason: '四份都应当有元数据（打不开的话上面那条就已经挂了）',
     );
-    final byName = <String, String>{
-      for (final d in opened) d.displayName: d.meta!.container,
-    };
-    expect(byName['安可60w-ip18pro.atkcc'], 'atkcc');
-    expect(byName['山泽60w-ip18pro.sqlite'], 'sqlite');
-    expect(byName['ufcs_vivo_x300u.sqlite'], 'sqlite');
+    expect(opened[0].meta!.container, 'atkcc');
+    expect(opened[1].meta!.container, 'sqlite');
+    expect(opened[2].meta!.container, 'sqlite');
     expect(
-      byName.values,
+      opened.map((d) => d.meta!.container),
       contains('pdstream'),
       reason: '.pdStream 必须能认出来',
     );
@@ -210,11 +205,11 @@ void main() {
           workspace.docs.length == before + 2 &&
           workspace.docs
               .skip(before)
-              .every((d) => d.state == DocState.done || d.state == DocState.failed),
+              .every((d) => d.state != DocState.opening && d.state != DocState.decoding),
     );
 
     final opened = workspace.docs.sublist(before);
-    expect(opened[0].state, DocState.done, reason: '好的那份不该被带坏');
+    expect(opened[0].state, DocState.ready, reason: '未激活的好文件应保持待解码');
     expect(opened[1].state, DocState.failed, reason: '坏的那份只红自己');
     expect(opened[1].error, isNotNull);
   });
@@ -253,6 +248,13 @@ void main() {
     expect(prefs.detailW, kDetailWidthDefault);
     expect(prefs.tlH, kTimelineHeightDefault);
     expect(prefs.rowH, kRowHeightNormal);
+
+    await _fromShell('command', 'toggleDense');
+    await tester.pump();
+    expect(prefs.compact, isTrue);
+    await _fromShell('command', 'toggleDense');
+    await tester.pump();
+    expect(prefs.compact, isFalse);
 
     // 没认出来的命令要静默忽略（新外壳配旧界面时不该炸）
     await _fromShell('command', '下一个版本才有的命令');
@@ -293,6 +295,13 @@ void main() {
 
     // 外壳拿标题的方式就是 SetWindowTextW；这一条同时也是「转交进来的路径
     // 真的被打开了」的**外部可观测证据** —— 不靠人眼看窗口也能验。
-    expect(_reportedTitle(), 'PDScope — 苹果40w-ip18pro.atkcc');
+    expect(_reportedTitle(), 'PDScope — ${File(path).uri.pathSegments.last}');
+
+    await tester.runAsync(() async {
+      await _fromShell('command', 'closeCurrent');
+      await _waitUntil(() => workspace.docs.length == before);
+      await _fromShell('command', 'closeAll');
+      await _waitUntil(() => workspace.docs.isEmpty);
+    });
   });
 }

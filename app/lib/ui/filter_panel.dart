@@ -46,17 +46,44 @@ class FilterPanel extends StatelessWidget {
                       style: TextStyle(fontSize: 11.5, color: p.tx3),
                     )
                   else ...[
+                    _channels(p),
+                    const _Gap(),
+                    _multi(context, p, '数据方向', roleValues, doc.filters.roles),
+                    const _Gap(),
+                    _multi(
+                      context,
+                      p,
+                      linkTitle(doc.protocol),
+                      linkValues(doc.protocol),
+                      doc.filters.sops,
+                    ),
+                    const _Gap(),
+                    _multi(
+                      context,
+                      p,
+                      '报文类别',
+                      catValues(doc.protocol),
+                      doc.filters.cats,
+                    ),
+                    const _Gap(),
                     _quickFilters(context, p),
-                    const _Gap(),
-                    _multi(context, p, '方向', roleValues, doc.filters.roles),
-                    const _Gap(),
-                    _multi(context, p, linkTitle(doc.protocol), linkValues(doc.protocol), doc.filters.sops),
-                    const _Gap(),
-                    _multi(context, p, '类别', catValues(doc.protocol), doc.filters.cats),
                     const _Gap(),
                     _types(context, p),
                     const _Gap(),
                     _timeWindow(context, p),
+                    const _Gap(),
+                    _keywords(p),
+                    const _Gap(),
+                    OutlinedButton(
+                      onPressed: () {
+                        final previous = doc.filters;
+                        doc.filters = FilterState.defaults(doc.protocol)
+                          ..sortKey = previous.sortKey
+                          ..sortAsc = previous.sortAsc;
+                        _apply(null);
+                      },
+                      child: const Text('重置全部筛选'),
+                    ),
                   ],
                 ],
               ),
@@ -70,12 +97,18 @@ class FilterPanel extends StatelessWidget {
   Widget _header(BuildContext context, Palette p) => Container(
     height: 34,
     padding: const EdgeInsets.symmetric(horizontal: 12),
-    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: p.line))),
+    decoration: BoxDecoration(
+      border: Border(bottom: BorderSide(color: p.line)),
+    ),
     child: Row(
       children: [
         Text(
           '筛选',
-          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: p.tx),
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: p.tx,
+          ),
         ),
         const Spacer(),
         Tooltip(
@@ -93,10 +126,72 @@ class FilterPanel extends StatelessWidget {
     ),
   );
 
+  Widget _channels(Palette p) {
+    final channels = doc.meta?.channels ?? const [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: '通道',
+          trailing: Text(
+            doc.meta?.isPowerz == true ? '单通路' : '${channels.length} 个通道',
+            style: TextStyle(fontSize: 10.5, color: p.tx3),
+          ),
+        ),
+        if (doc.meta?.isPowerz == true)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: p.accentSoft,
+              border: Border.all(color: p.accent),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  doc.protocol,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: p.tx,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${doc.meta!.tableRows} 行事件',
+                  style: TextStyle(fontSize: 10, color: p.tx3),
+                ),
+              ],
+            ),
+          )
+        else
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            children: [
+              for (final ch in channels)
+                Tooltip(
+                  message: '${ch.chunks} 块 · ${ch.totalSamples} 采样点',
+                  child: _Toggle(
+                    label: 'CH${ch.channel}',
+                    on: doc.channel == ch.channel,
+                    color: p.accent,
+                    onTap: () =>
+                        unawaited(workspace.switchChannel(doc, ch.channel)),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
   /// 快捷过滤：一键屏蔽 GoodCRC 心跳 / 只看 CRC 错误 / 只看功率协商 / 只看状态切换。
   Widget _quickFilters(BuildContext context, Palette p) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      const _SectionTitle(title: '快速过滤'),
       _SwitchRow(
         label: doc.isUfcs ? '屏蔽 ACK / NCK 心跳' : '屏蔽 GoodCRC 心跳',
         value: doc.filters.hideGoodCrc,
@@ -160,7 +255,11 @@ class FilterPanel extends StatelessWidget {
 
   /// 具体报文类型（多选 + 计数）。候选与计数由核心在解码后给出。
   Widget _types(BuildContext context, Palette p) {
-    final counts = doc.typeCounts;
+    final counts = doc.typeCounts.entries.toList()
+      ..sort((a, b) {
+        final countOrder = b.value.compareTo(a.value);
+        return countOrder != 0 ? countOrder : a.key.compareTo(b.key);
+      });
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -169,60 +268,116 @@ class FilterPanel extends StatelessWidget {
           trailing: doc.filters.types.isEmpty
               ? Text('全部', style: TextStyle(fontSize: 10.5, color: p.tx3))
               : TextButton(
-                  onPressed: () => _apply((f) => f.types.clear(), rebuildAfter: true),
+                  onPressed: () =>
+                      _apply((f) => f.types.clear(), rebuildAfter: true),
                   style: TextButton.styleFrom(
                     minimumSize: Size.zero,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text('清空', style: TextStyle(fontSize: 10.5, color: p.accent)),
+                  child: Text(
+                    '清空',
+                    style: TextStyle(fontSize: 10.5, color: p.accent),
+                  ),
                 ),
         ),
-        if (counts.isEmpty)
-          Text('解码后列出', style: TextStyle(fontSize: 11, color: p.tx3))
-        else
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 208),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final e in counts.entries)
-                    InkWell(
-                      onTap: () => _apply((f) {
-                        if (!f.types.remove(e.key)) f.types.add(e.key);
-                      }, rebuildAfter: true),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            Icon(
-                              doc.filters.types.contains(e.key)
-                                  ? Icons.check_box
-                                  : Icons.check_box_outline_blank,
-                              size: 14,
-                              color: doc.filters.types.contains(e.key) ? p.accent : p.tx3,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                e.key,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11.5, color: p.tx2),
-                              ),
-                            ),
-                            Text(
-                              '${e.value}',
-                              style: TextStyle(fontSize: 10.5, color: p.tx3),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+        Material(
+          color: p.panel,
+          child: ExpansionTile(
+            dense: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+            childrenPadding: const EdgeInsets.symmetric(horizontal: 8),
+            title: Text(
+              doc.filters.types.isEmpty
+                  ? '全部类型'
+                  : '已选 ${doc.filters.types.length} 类型',
+              style: TextStyle(fontSize: 11.5, color: p.tx2),
             ),
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 208),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final e in counts)
+                        InkWell(
+                          onTap: () => _apply((f) {
+                            if (!f.types.remove(e.key)) f.types.add(e.key);
+                          }, rebuildAfter: true),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  doc.filters.types.contains(e.key)
+                                      ? Icons.check_box
+                                      : Icons.check_box_outline_blank,
+                                  size: 14,
+                                  color: doc.filters.types.contains(e.key)
+                                      ? p.accent
+                                      : p.tx3,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    e.key,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: p.tx2,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '${e.value}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: p.tx3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _keywords(Palette p) {
+    final words = doc.isUfcs
+        ? const [
+            'Request',
+            'Output_Capabilities',
+            'Power_Ready',
+            'Cable',
+            'Refuse',
+            'Verify',
+          ]
+        : const ['PPS', 'AVS', 'VID', 'Alert', 'CRC'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle(title: '关键字'),
+        Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: [
+            for (final word in words)
+              ActionChip(
+                label: Text(word, style: const TextStyle(fontSize: 10.5)),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _apply((f) => f.q = word),
+              ),
+          ],
+        ),
       ],
     );
   }
@@ -237,13 +392,19 @@ class FilterPanel extends StatelessWidget {
           title: '时间窗口',
           trailing: f.hasTimeWindow
               ? TextButton(
-                  onPressed: () => _apply((fl) => fl.resetView()),
+                  onPressed: () => _apply((fl) {
+                    fl.tFrom = 0;
+                    fl.tTo = 1;
+                  }),
                   style: TextButton.styleFrom(
                     minimumSize: Size.zero,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text('复位视图', style: TextStyle(fontSize: 10.5, color: p.accent)),
+                  child: Text(
+                    '复位视图',
+                    style: TextStyle(fontSize: 10.5, color: p.accent),
+                  ),
                 )
               : null,
         ),
@@ -262,6 +423,23 @@ class FilterPanel extends StatelessWidget {
           '${fmtReadout(f.tTo * doc.spanSec, doc.spanSec)}',
           style: TextStyle(fontSize: 11, color: p.tx3),
         ),
+        Row(
+          children: [
+            TextButton(
+              onPressed: () => _apply((fl) {
+                fl.tFrom = 0;
+                fl.tTo = 1;
+              }),
+              child: const Text('全时段'),
+            ),
+            TextButton(
+              onPressed: () => unawaited(
+                workspace.ready.then((e) => doc.fitTimeToCurrentView(e)),
+              ),
+              child: const Text('当前视图'),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -274,7 +452,10 @@ class FilterPanel extends StatelessWidget {
   /// 改完筛选后把新条件推给核心并刷新视图。
   ///
   /// [mutate] 为 null 表示「调用方已经改好了 filters，只要重算」。
-  void _apply(void Function(FilterState f)? mutate, {bool rebuildAfter = false}) {
+  void _apply(
+    void Function(FilterState f)? mutate, {
+    bool rebuildAfter = false,
+  }) {
     if (mutate != null) mutate(doc.filters);
     doc.touch();
     unawaited(workspace.ready.then((e) => doc.applyFilters(e)));
@@ -343,9 +524,7 @@ class _Toggle extends StatelessWidget {
         decoration: BoxDecoration(
           color: on ? color.withValues(alpha: .14) : p.panel2,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: on ? color.withValues(alpha: .55) : p.line,
-          ),
+          border: Border.all(color: on ? color.withValues(alpha: .55) : p.line),
         ),
         child: Text(
           label,

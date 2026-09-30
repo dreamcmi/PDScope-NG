@@ -153,7 +153,8 @@ TEST(shell_menu_labels_and_state) {
 
   HMENU view = ::GetSubMenu(bar, 1);
   CHECK(view != nullptr);
-  CHECK_EQ(::GetMenuItemID(view, 0), static_cast<UINT>(pdscope_shell::kMenuToggleTheme));
+  CHECK_EQ(::GetMenuItemID(view, 0), static_cast<UINT>(pdscope_shell::kMenuSearch));
+  CHECK_EQ(::GetMenuItemID(view, 1), static_cast<UINT>(pdscope_shell::kMenuToggleTheme));
 
   // 没有打开的文件时，两个导出项要置灰（菜单和界面是同一套状态）。
   pdscope_shell::MenuState no_doc;
@@ -161,6 +162,8 @@ TEST(shell_menu_labels_and_state) {
   pdscope_shell::ApplyMenuState(nullptr, bar, no_doc);
   CHECK((::GetMenuState(file, pdscope_shell::kMenuExportCsv, MF_BYCOMMAND) & MF_GRAYED) != 0);
   CHECK((::GetMenuState(file, pdscope_shell::kMenuExportJson, MF_BYCOMMAND) & MF_GRAYED) != 0);
+  CHECK((::GetMenuState(file, pdscope_shell::kMenuClose, MF_BYCOMMAND) & MF_GRAYED) != 0);
+  CHECK((::GetMenuState(file, pdscope_shell::kMenuCloseAll, MF_BYCOMMAND) & MF_GRAYED) != 0);
 
   // 有文件之后恢复可点；勾选状态跟着 Dart 报上来的来。
   pdscope_shell::MenuState with_doc;

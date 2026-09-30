@@ -344,9 +344,9 @@ static std::string payloadTestRequest(pdscope::DetailEmitter& em, const uint8_t*
 }
 
 static std::string payloadUnknown(pdscope::DetailEmitter& em, const uint8_t* d, size_t dn, int cmd) {
-  em.object("未知命令 0x" + pdscope::hexU(static_cast<uint64_t>(cmd), 2) + " 的数据");
+  em.object("未知命令 0x" + pdscope::hexVar(static_cast<uint64_t>(cmd)) + " 的数据");
   em.detail("原始数据", "0x" + ufcsHex(d, dn));
-  std::string s = "未定义的数据命令 0x" + pdscope::hexU(static_cast<uint64_t>(cmd), 2)
+  std::string s = "未定义的数据命令 0x" + pdscope::hexVar(static_cast<uint64_t>(cmd))
                 + "（" + std::to_string(dn) + " 字节，按原始字节列出）";
   em.note(s);
   return s;

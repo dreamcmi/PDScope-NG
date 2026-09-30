@@ -408,7 +408,7 @@ Object? _handle(
           throw PdscopeException('解码失败（${b.statusName(st)}）', st);
         }
         if (out.ref.data == nullptr || out.ref.len == 0) return null;
-        final s = String.fromCharCodes(out.ref.data.asTypedList(out.ref.len));
+        final s = utf8.decode(out.ref.data.asTypedList(out.ref.len));
         return Map<String, dynamic>.from(_jsonMap(s));
       } finally {
         b.bufFree(out);

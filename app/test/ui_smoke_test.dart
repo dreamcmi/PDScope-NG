@@ -24,14 +24,11 @@ import 'package:pdscope_app/ui/packet_table.dart';
 import 'package:pdscope_app/ui/tab_strip.dart';
 import 'package:pdscope_app/ui/timeline.dart';
 import 'package:pdscope_app/ui/top_bar.dart';
+import 'sample_fixture.dart';
 
 /// 找一份本机样本；找不到返回 null（私有抓包不在仓库里，缺失是正常情况）。
 String? _sample(String name) {
-  for (final base in ['..', '.', '../..']) {
-    final f = File('$base${Platform.pathSeparator}$name');
-    if (f.existsSync()) return f.absolute.path;
-  }
-  return null;
+  return sampleFixture(name);
 }
 
 /// 等一个条件成立，然后多泵几帧让界面把结果画出来。
@@ -268,11 +265,11 @@ void main() {
     });
     await _waitFor(
       tester,
-      () => ws.docs.every((d) => d.state == DocState.done || d.state == DocState.failed),
+      () => ws.docs.every((d) => d.state != DocState.opening && d.state != DocState.decoding),
     );
 
     expect(ws.docs.length, 2);
-    expect(ws.docs[0].state, DocState.done, reason: '好的那份不该被带坏');
+    expect(ws.docs[0].state, DocState.ready, reason: '未激活的好文件应保持待解码');
     expect(ws.docs[1].state, DocState.failed, reason: '坏的那份应当只红自己');
     expect(ws.docs[1].error, isNotNull);
     // 两个标签都还在（不是「坏文件把整份工作区搞崩」）

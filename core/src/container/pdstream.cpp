@@ -1,4 +1,5 @@
 #include "pdstream.h"
+#include "../ufcs/frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -150,10 +151,23 @@ uint64_t PdStreamTable::forEachRow(const std::string& name,
     return n;
 }
 
-std::unique_ptr<PowerzCapture> openPdStream(const Bytes& bytes) {
+PowerzKind sniffStreamProtocol(const PdStreamParsed& parsed) {
+    size_t frames = 0, events = 0;
+    const size_t n = std::min<size_t>(parsed.records.size(), 64);
+    for (size_t i = 0; i < n; ++i) {
+        const Bytes& raw = parsed.records[i].raw;
+        if (ufcs::ufcsParseRecord(raw.data(), raw.size())) ++frames;
+        else if (ufcs::ufcsParseEvent(raw.data(), raw.size())) ++events;
+    }
+    // A PD packet can have arbitrary bytes, so require repeated UFCS evidence.
+    return (frames >= 2 || (frames >= 1 && events >= 1) || events >= 3)
+        ? PowerzKind::Ufcs : PowerzKind::Pd;
+}
+
+std::unique_ptr<PowerzCapture> openPdStream(const Bytes& bytes, PowerzKind kind) {
     PdStreamParsed parsed = readPdStream(bytes);
-    auto table = std::make_shared<PdStreamTable>(parsed);
-    auto cap = std::make_unique<PowerzCapture>(table, PowerzKind::Pd, bytes.size());
+    auto table = std::make_shared<PdStreamTable>(parsed, kind);
+    auto cap = std::make_unique<PowerzCapture>(table, kind, bytes.size());
 
     PowerzMeta& m = cap->metaMutable();
 
@@ -165,7 +179,7 @@ std::unique_ptr<PowerzCapture> openPdStream(const Bytes& bytes) {
     m.totalSamples = totalSamples;
     m.durationSec = static_cast<double>(totalSamples) / kPowerzRate;
 
-    m.title = "POWER-Z · .pdStream";
+    m.title = kind == PowerzKind::Pd ? "POWER-Z · .pdStream" : "POWER-Z · .ufcsStream";
     m.unsupported.clear();
     m.isSqlite = false;                 // 不是 SQLite，别让界面去读页大小
     m.pageSize = m.pageCount = m.textEncoding = m.writeVersion = 0;

@@ -111,7 +111,7 @@ bool looksLikeCapture(const std::string& s) {
     if (dot == std::string::npos || dot + 1 >= s.size()) return false;
     std::string ext = pdscope::lower(s.substr(dot + 1));
     return ext == "atkcc" || ext == "sqlite" || ext == "db" || ext == "bin"
-        || ext == "zip" || ext == "pdstream";
+        || ext == "zip" || ext == "pdstream" || ext == "ufcsstream";
 }
 
 std::string helpText() {
@@ -138,7 +138,7 @@ std::string helpText() {
         "支持的文件：\n"
         "  · .atkcc      ATK-C 的 CC 线电平采样\n"
         "  · .sqlite     POWER-Z 分析仪导出（USB PD / UFCS）\n"
-        "  · .pdStream   只有报文的记录流\n"
+        "  · .pdStream / .ufcsStream   只有报文的记录流\n"
         "\n"
         "CSV 一律是 UTF-8：写文件带 BOM（Excel / WPS 双击即正确），走管道不带。\n"
         "退出码：0 成功 · 1 导出失败（文件坏了 / 写不进去） · 2 用法不对\n";
@@ -309,6 +309,7 @@ std::string sourceLabel(const Session& s) {
         case pdscope::SourceKind::Atkcc:        return "ATK-C 原始采样";
         case pdscope::SourceKind::PowerzSqlite: return "POWER-Z 分析仪导出";
         case pdscope::SourceKind::PdStream:     return ".pdStream 报文流";
+        case pdscope::SourceKind::UfcsStream:   return ".ufcsStream 报文流";
     }
     return "未知来源";
 }

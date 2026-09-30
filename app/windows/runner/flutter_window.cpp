@@ -263,11 +263,23 @@ void FlutterWindow::HandleMenuCommand(int id) {
     case pdscope_shell::kMenuOpen:
       command = "openFile";
       break;
+    case pdscope_shell::kMenuClose:
+      command = "closeCurrent";
+      break;
+    case pdscope_shell::kMenuCloseAll:
+      command = "closeAll";
+      break;
     case pdscope_shell::kMenuExportCsv:
       command = "exportCsv";
       break;
     case pdscope_shell::kMenuExportJson:
       command = "exportJson";
+      break;
+    case pdscope_shell::kMenuSearch:
+      command = "search";
+      break;
+    case pdscope_shell::kMenuDense:
+      command = "toggleDense";
       break;
     case pdscope_shell::kMenuToggleTheme:
       command = "toggleTheme";

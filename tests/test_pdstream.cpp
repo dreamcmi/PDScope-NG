@@ -11,6 +11,7 @@
 #include "fixtures.h"
 #include "packet.h"
 #include "pd_frames.h"
+#include "session.h"
 
 #include <cmath>
 
@@ -139,4 +140,28 @@ TEST(pdstream_decodes_packets_without_adc) {
     // 时间戳按「1 采样点 = 1 ms」映射
     CHECK_NEAR(res.packets[0].timeMs, 250.0, 1e-9);
     CHECK_EQ(res.packets[0].startSample, static_cast<uint64_t>(250));
+}
+
+TEST(ufcsstream_uses_ufcs_decoder_and_keeps_events) {
+    const Bytes ack = fxframe::withCrc(fxframe::ufcsControl(0b010, 1, 0b000001, 0x01));
+    std::vector<PdStreamRecord> rows;
+    rows.push_back({0.10, 5.0, 1.0, fxframe::ufcsEvent(100, 3)});
+    rows.push_back({0.11, 5.0, 1.0, fxframe::ufcsEvent(110, 4)});
+    rows.push_back({0.12, 5.0, 1.0, fxframe::ufcsRecord(120, 0, 1, 0, ack)});
+    rows.push_back({0.13, 5.0, 1.0, fxframe::ufcsRecord(130, 0, 2, 0, ack)});
+    const Bytes stream = writePdStream(rows);
+    CHECK(sniffPdStream(stream));
+    CHECK_EQ(static_cast<int>(sniffStreamProtocol(readPdStream(stream))),
+             static_cast<int>(PowerzKind::Ufcs));
+
+    auto session = Session::openBytes(stream, "capture.bin");
+    CHECK_EQ(session->protocol(), std::string("UFCS"));
+    CHECK_EQ(std::string(session->containerName()), std::string("ufcsstream"));
+    CHECK_EQ(session->metadata().at("title").get<std::string>(),
+             std::string("POWER-Z · .ufcsStream"));
+    session->decode(-1, 0, false);
+    CHECK_EQ(session->stats().packetCount, 2u);
+    CHECK_EQ(session->stats().ufcsEvents, 2u);
+    CHECK_EQ(session->packets()[0].msgType, std::string("ACK"));
+    CHECK_EQ(static_cast<int>(session->packets()[0].crcOk), static_cast<int>(CrcState::Ok));
 }

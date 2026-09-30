@@ -15,7 +15,7 @@
  * 本就不同（连字段集都不一样），逐字节没有意义。
  *
  * 用法：
- *   node tools/csv-diff.mjs                 # 自动扫上级目录的 *.atkcc / *.sqlite
+ *   node tools/csv-diff.mjs                 # 自动扫 rawdata/ 的可比样本
  *   node tools/csv-diff.mjs a.atkcc b.sqlite
  *   node tools/csv-diff.mjs --ref ../PDScope --bin build/out/pdscope-cli.exe
  *   node tools/csv-diff.mjs --keep          # 保留临时 CSV 便于肉眼比对
@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const NG_ROOT = path.resolve(HERE, '..');          // PDScope-NG/
-const SAMPLES_DIR = path.resolve(NG_ROOT, '..');   // ATKDecom/（抓包样本都在这一层）
+const SAMPLES_DIRS = [path.join(NG_ROOT, 'rawdata'), path.resolve(NG_ROOT, '..')];
 
 /* ────────────────────────── 参数 ────────────────────────── */
 
@@ -65,10 +65,17 @@ if (!existsSync(bin)) {
 }
 
 if (files.length === 0) {
-  for (const f of readdirSync(SAMPLES_DIR)) {
-    const l = f.toLowerCase();
-    // `.pdStream` 不进默认扫描：样本目录里没有实测文件，只有 tools/ 生成的合成件
-    if (l.endsWith('.atkcc') || l.endsWith('.sqlite')) files.push(path.join(SAMPLES_DIR, f));
+  for (const dir of SAMPLES_DIRS) {
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      const l = f.toLowerCase();
+      // Old JS does not recognize UFCS streams correctly, so they are checked
+      // against the matching SQLite captures in the new engine tests instead.
+      if (l.endsWith('.atkcc') || l.endsWith('.sqlite') || l.endsWith('.pdstream')) {
+        files.push(path.join(dir, f));
+      }
+    }
+    if (files.length > 0) break;
   }
 }
 if (files.length === 0) {

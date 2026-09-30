@@ -30,13 +30,16 @@ class SortKey {
   static const role = 'role';
   static const kind = 'kind';
   static const msgId = 'msgId';
+  static const nObjects = 'nObjects';
+  static const dataLen = 'dataLen';
   static const crcOk = 'crcOk';
   static const summary = 'summary';
 }
 
 /// 链路一栏的候选（UFCS 是 D+/D-/D±，PD 是 SOP 序列）—— 与 `linkValues()` 同源。
-List<String> linkValues(String protocol) =>
-    protocol == 'UFCS' ? const ['D+', 'D-', 'D±'] : const ['SOP', "SOP'", "SOP''", 'Hard Reset', 'Cable Reset'];
+List<String> linkValues(String protocol) => protocol == 'UFCS'
+    ? const ['D+', 'D-', 'D±']
+    : const ['SOP', "SOP'", "SOP''", 'Hard Reset', 'Cable Reset'];
 
 /// 类别一栏的候选 —— 与 `catValues()` 同源。
 List<String> catValues(String protocol) => protocol == 'UFCS'
@@ -78,6 +81,7 @@ class FilterState {
   Set<String> roles;
   Set<String> sops;
   Set<String> cats;
+
   /// 空集 = 不按类型过滤（核心的约定）。
   Set<String> types;
 

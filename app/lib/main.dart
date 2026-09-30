@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'core/engine.dart';
 import 'core/ffi.dart';
+import 'core/prefs.dart';
 import 'core/shell.dart';
 import 'core/workspace.dart';
 import 'ui/app.dart';
@@ -16,7 +17,7 @@ Future<void> main() async {
 
   try {
     final engine = await EngineClient.instance();
-    final ws = Workspace(Future.value(engine));
+    final ws = Workspace(Future.value(engine), prefs: Prefs.persistent());
 
     // 接上桌面外壳：拖放、文件关联、命令行参数、原生菜单都从这条通道进来。
     //

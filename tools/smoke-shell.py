@@ -71,7 +71,7 @@ def visible_windows(prefix):
             return True
         buf = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buf, length + 1)
-        if buf.value.startswith(prefix):
+        if buf.value == prefix or buf.value.startswith(prefix + " — "):
             found.append((hwnd, buf.value))
         return True
 
@@ -183,6 +183,9 @@ def main():
         if not path or not os.path.isfile(path):
             print(f"样本缺失：{path}")
             return 2
+    # The app is launched with its Release directory as cwd. Forward absolute
+    # paths so an invocation from the repository root still opens the sample.
+    sample_a, sample_b = os.path.abspath(sample_a), os.path.abspath(sample_b)
 
     name_a = os.path.basename(sample_a)
     name_b = os.path.basename(sample_b)

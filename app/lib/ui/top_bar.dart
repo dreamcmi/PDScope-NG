@@ -62,7 +62,11 @@ class TopBar extends StatelessWidget {
       const SizedBox(width: 7),
       Text(
         'PDScope',
-        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: p.tx),
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: p.tx,
+        ),
       ),
     ],
   );
@@ -88,7 +92,11 @@ class TopBar extends StatelessWidget {
         child: Text(
           d.displayName,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: p.tx),
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+            color: p.tx,
+          ),
         ),
       ),
     );
@@ -137,7 +145,13 @@ class TopBar extends StatelessWidget {
       );
       if (st.connectCount > 0 || st.disconnectCount > 0) {
         chips.add(
-          _Chip(p, '插拔 ${st.connectCount}/${st.disconnectCount}', p.tx2, p.panel2, tip: '插入 / 拔出'),
+          _Chip(
+            p,
+            '插拔 ${st.connectCount}/${st.disconnectCount}',
+            p.tx2,
+            p.panel2,
+            tip: '插入 / 拔出',
+          ),
         );
       }
       if (st.ufcsEvents > 0) {
@@ -165,7 +179,9 @@ class TopBar extends StatelessWidget {
         );
       }
       if (st.badCrc > 0) {
-        chips.add(_Chip(p, 'CRC 错误 ${st.badCrc}', p.bad, p.bad.withValues(alpha: .12)));
+        chips.add(
+          _Chip(p, 'CRC 错误 ${st.badCrc}', p.bad, p.bad.withValues(alpha: .12)),
+        );
       }
       final pick = st.channelPick;
       if (pick != null) {
@@ -204,9 +220,18 @@ class TopBar extends StatelessWidget {
               unawaited(workspace.ready.then((e) => d.applyFilters(e)));
             },
           ),
+        if (d != null && d.decoded)
+          _IconBtn(
+            icon: workspace.prefs.compact
+                ? Icons.unfold_more
+                : Icons.unfold_less,
+            tip: workspace.prefs.compact ? '恢复正常行高' : '紧凑行高',
+            onTap: () => workspace.prefs.compact = !workspace.prefs.compact,
+          ),
         const SizedBox(width: 8),
         if (d != null && d.decoded)
           _SearchBox(
+            key: ValueKey(d.id),
             focusNode: searchFocus,
             initial: d.filters.q,
             onChanged: (v) {
@@ -234,6 +259,7 @@ class TopBar extends StatelessWidget {
       ],
     );
   }
+
   /// 顶栏 chip 上的「这份数据从哪来」。
   static String _sourceLabel(CaptureMeta m) {
     switch (m.container) {
@@ -241,6 +267,8 @@ class TopBar extends StatelessWidget {
         return 'ATK-C · .atkcc';
       case 'pdstream':
         return 'POWER-Z · .pdStream';
+      case 'ufcsstream':
+        return 'POWER-Z · .ufcsStream';
       default:
         return m.isUfcs ? 'POWER-Z · .sqlite（UFCS）' : 'POWER-Z · .sqlite';
     }
@@ -312,7 +340,11 @@ class _Chip extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 11.5, color: fg, fontWeight: FontWeight.w500),
+        style: TextStyle(
+          fontSize: 11.5,
+          color: fg,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
     return tip == null ? body : Tooltip(message: tip!, child: body);
@@ -392,7 +424,9 @@ class _Segmented extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11.5,
                     color: i == selected ? Colors.white : p.tx2,
-                    fontWeight: i == selected ? FontWeight.w600 : FontWeight.w400,
+                    fontWeight: i == selected
+                        ? FontWeight.w600
+                        : FontWeight.w400,
                   ),
                 ),
               ),
@@ -405,6 +439,7 @@ class _Segmented extends StatelessWidget {
 
 class _SearchBox extends StatefulWidget {
   const _SearchBox({
+    super.key,
     required this.focusNode,
     required this.initial,
     required this.onChanged,
@@ -419,8 +454,19 @@ class _SearchBox extends StatefulWidget {
 }
 
 class _SearchBoxState extends State<_SearchBox> {
-  late final TextEditingController _c = TextEditingController(text: widget.initial);
+  late final TextEditingController _c = TextEditingController(
+    text: widget.initial,
+  );
   Timer? _debounce;
+
+  @override
+  void didUpdateWidget(_SearchBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initial != widget.initial && _c.text != widget.initial) {
+      _debounce?.cancel();
+      _c.text = widget.initial;
+    }
+  }
 
   @override
   void dispose() {
@@ -432,7 +478,10 @@ class _SearchBoxState extends State<_SearchBox> {
   /// 输入防抖：每敲一个字符就重建一次视图，几万条报文会卡。
   void _onChanged(String v) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 220), () => widget.onChanged(v));
+    _debounce = Timer(
+      const Duration(milliseconds: 220),
+      () => widget.onChanged(v),
+    );
   }
 
   @override
@@ -452,7 +501,10 @@ class _SearchBoxState extends State<_SearchBox> {
           hintStyle: TextStyle(fontSize: 11.5, color: p.tx3),
           prefixIcon: Icon(Icons.search, size: 15, color: p.tx3),
           prefixIconConstraints: const BoxConstraints(minWidth: 28),
-          contentPadding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 6,
+            horizontal: 6,
+          ),
           filled: true,
           fillColor: p.panel2,
           border: OutlineInputBorder(

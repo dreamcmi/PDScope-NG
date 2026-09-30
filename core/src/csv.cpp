@@ -145,7 +145,7 @@ std::string csvBase(const std::string& fileName) {
     const std::string l = lower(s);
     // ⚠ 这三个扩展名要与「按内容分流」支持的三类来源一一对应 ——
     // 少一个 `.pdstream` 就会让默认导出名变成 `抓包.pdstream-ch0.csv`。
-    for (const char* ext : {".atkcc", ".sqlite", ".db", ".pdstream"}) {
+    for (const char* ext : {".atkcc", ".sqlite", ".db", ".pdstream", ".ufcsstream"}) {
         const size_t n = std::strlen(ext);
         if (l.size() >= n && l.compare(l.size() - n, n, ext) == 0) {
             return s.substr(0, s.size() - n);

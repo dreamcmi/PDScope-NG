@@ -3,7 +3,11 @@
 // 与「一份抓包是什么」无关、只跟「我怎么看」有关的东西放这里：行高、详情面板宽度、
 // 曲线区高度、筛选栏折叠、主题。这几个切标签不变；
 // Flutter 侧同理，放在工作区级别而不是文档级别。
-// 持久化留待后面接平台存储。
+// 旧版会记住主题、详情宽度和曲线高度；桌面版把这三项写入用户配置目录。
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 /// 详情面板宽度的默认 / 上下限。
@@ -21,6 +25,79 @@ const double kRowHeightNormal = 30;
 const double kRowHeightCompact = 24;
 
 class Prefs extends ChangeNotifier {
+  Prefs({this.storage}) {
+    _load();
+  }
+
+  Prefs.persistent() : this(storage: _defaultStorage());
+
+  final File? storage;
+  Timer? _saveTimer;
+
+  static File _defaultStorage() {
+    final base =
+        Platform.environment['APPDATA'] ??
+        Platform.environment['HOME'] ??
+        Directory.current.path;
+    return File(
+      '$base${Platform.pathSeparator}PDScope-NG${Platform.pathSeparator}prefs.json',
+    );
+  }
+
+  void _load() {
+    final file = storage;
+    if (file == null || !file.existsSync()) return;
+    try {
+      final value = jsonDecode(file.readAsStringSync());
+      if (value is! Map<String, dynamic>) return;
+      final theme = value['theme'];
+      if (theme == 'dark') _themeMode = ThemeMode.dark;
+      final detail = value['detailW'];
+      if (detail is num && detail.isFinite) {
+        _detailW = detail.clamp(kDetailWidthMin, kDetailWidthMax).toDouble();
+      }
+      final timeline = value['tlH'];
+      if (timeline is num && timeline.isFinite) {
+        _tlH = timeline
+            .clamp(kTimelineHeightMin, kTimelineHeightMax)
+            .toDouble();
+      }
+    } catch (_) {
+      // A damaged or inaccessible preference file must not block opening captures.
+    }
+  }
+
+  void _saveSoon() {
+    if (storage == null) return;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 250), flush);
+  }
+
+  void flush() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    final file = storage;
+    if (file == null) return;
+    try {
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync(
+        jsonEncode({
+          'theme': isDark ? 'dark' : 'light',
+          'detailW': _detailW,
+          'tlH': _tlH,
+        }),
+      );
+    } catch (_) {
+      // Match the old localStorage behavior when user storage is unavailable.
+    }
+  }
+
+  @override
+  void dispose() {
+    flush();
+    super.dispose();
+  }
+
   /// 表格行高。
   double _rowH = kRowHeightNormal;
   double get rowH => _rowH;
@@ -43,6 +120,7 @@ class Prefs extends ChangeNotifier {
     if (c == _detailW) return;
     _detailW = c;
     notifyListeners();
+    _saveSoon();
   }
 
   /// 详情面板是否收起。收起后右缘留一条竖栏作为**不依赖数据的重开入口**。
@@ -62,6 +140,7 @@ class Prefs extends ChangeNotifier {
     if (c == _tlH) return;
     _tlH = c;
     notifyListeners();
+    _saveSoon();
   }
 
   /// 左侧筛选栏是否折叠。
@@ -80,6 +159,7 @@ class Prefs extends ChangeNotifier {
     if (v == _themeMode) return;
     _themeMode = v;
     notifyListeners();
+    _saveSoon();
   }
 
   bool get isDark => _themeMode == ThemeMode.dark;

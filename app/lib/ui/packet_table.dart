@@ -16,6 +16,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/document.dart';
+import '../core/filters.dart';
 import '../core/models.dart';
 import '../core/palette.dart';
 import '../core/workspace.dart';
@@ -49,6 +50,8 @@ class PacketTable extends StatefulWidget {
 
 class _PacketTableState extends State<PacketTable> {
   final _v = ScrollController();
+  int? _lastDocId;
+  int? _lastSelection;
 
   @override
   void dispose() {
@@ -61,6 +64,34 @@ class _PacketTableState extends State<PacketTable> {
   @override
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
+    if (_lastDocId != doc.id) {
+      _lastDocId = doc.id;
+      _lastSelection = null;
+    }
+    final selected = doc.selectedViewIndex;
+    if (_lastSelection != selected) {
+      _lastSelection = selected;
+      if (selected != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_v.hasClients || doc.selectedViewIndex != selected) {
+            return;
+          }
+          final top = selected * widget.workspace.prefs.rowH;
+          final bottom = top + widget.workspace.prefs.rowH;
+          final pos = _v.position;
+          if (top < pos.pixels) {
+            _v.jumpTo(
+              (top - widget.workspace.prefs.rowH).clamp(0, pos.maxScrollExtent),
+            );
+          } else if (bottom > pos.pixels + pos.viewportDimension) {
+            _v.jumpTo(
+              (bottom - pos.viewportDimension + widget.workspace.prefs.rowH)
+                  .clamp(0, pos.maxScrollExtent),
+            );
+          }
+        });
+      }
+    }
 
     if (!doc.decoded) {
       return _Centered(
@@ -105,15 +136,58 @@ class _PacketTableState extends State<PacketTable> {
     final rest = avail - _fixedSum;
     if (rest >= _minHex + _minSummary) {
       final hex = rest * 0.32;
-      return [_wIndex, _wSop, _wType, _wId, _wRole, _wObj, _wTime, _wBus, hex, rest - hex];
+      return [
+        _wIndex,
+        _wSop,
+        _wType,
+        _wId,
+        _wRole,
+        _wObj,
+        _wTime,
+        _wBus,
+        hex,
+        rest - hex,
+      ];
     }
     return [
-      _wIndex, _wSop, _wType, _wId, _wRole, _wObj, _wTime, _wBus, _minHex, _minSummary,
+      _wIndex,
+      _wSop,
+      _wType,
+      _wId,
+      _wRole,
+      _wObj,
+      _wTime,
+      _wBus,
+      _minHex,
+      _minSummary,
     ];
   }
 
   Widget _header(Palette p, List<double> w) {
-    const titles = ['#', 'SOP', '报文类型', 'ID', '方向', 'Obj', '时间', 'VBUS / IBUS', '数据 hex', '解析详情'];
+    const titles = [
+      '#',
+      'SOP',
+      '报文类型',
+      'ID',
+      '方向',
+      'Obj',
+      '时间',
+      'VBUS / IBUS',
+      '数据 hex',
+      '解析详情',
+    ];
+    final keys = [
+      SortKey.index,
+      SortKey.sop,
+      SortKey.msgType,
+      SortKey.msgId,
+      SortKey.role,
+      doc.isUfcs ? SortKey.dataLen : SortKey.nObjects,
+      SortKey.timeMs,
+      null,
+      null,
+      null,
+    ];
     return Container(
       height: 30,
       decoration: BoxDecoration(
@@ -125,13 +199,39 @@ class _PacketTableState extends State<PacketTable> {
           for (var i = 0; i < titles.length; i++)
             SizedBox(
               width: w[i],
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Align(
-                  alignment: _alignOf(i),
-                  child: Text(
-                    titles[i],
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: p.tx3),
+              child: InkWell(
+                onTap: keys[i] == null ? null : () => _sortBy(keys[i]!),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Align(
+                    alignment: _alignOf(i),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            titles[i],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: doc.filters.sortKey == keys[i]
+                                  ? p.accent
+                                  : p.tx3,
+                            ),
+                          ),
+                        ),
+                        if (doc.filters.sortKey == keys[i])
+                          Icon(
+                            doc.filters.sortAsc
+                                ? Icons.arrow_upward
+                                : Icons.arrow_downward,
+                            size: 10,
+                            color: p.accent,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -139,6 +239,19 @@ class _PacketTableState extends State<PacketTable> {
         ],
       ),
     );
+  }
+
+  void _sortBy(String key) {
+    final f = doc.filters;
+    if (f.sortKey == key) {
+      f.sortAsc = !f.sortAsc;
+    } else {
+      f.sortKey = key;
+      f.sortAsc = true;
+    }
+    if (_v.hasClients) _v.jumpTo(0);
+    doc.touch();
+    unawaited(widget.workspace.ready.then((e) => doc.applyFilters(e)));
   }
 
   Widget _row(BuildContext context, Palette p, List<double> w, int i) {
@@ -154,7 +267,14 @@ class _PacketTableState extends State<PacketTable> {
       behavior: HitTestBehavior.opaque,
       onTap: r == null
           ? null
-          : () => unawaited(widget.workspace.ready.then((e) => doc.selectRow(e, r.index))),
+          : () {
+              widget.workspace.prefs.detailCollapsed = false;
+              unawaited(
+                widget.workspace.ready.then(
+                  (e) => doc.selectRow(e, r.index, viewIndex: i),
+                ),
+              );
+            },
       child: Container(
         decoration: BoxDecoration(
           color: bg,
@@ -194,13 +314,20 @@ class _PacketTableState extends State<PacketTable> {
 
     switch (col) {
       case 0:
-        return _wrap(Text('${r.index}', style: mono.copyWith(color: p.tx3)), Alignment.centerRight);
+        return _wrap(
+          Text('${r.index}', style: mono.copyWith(color: p.tx3)),
+          Alignment.centerRight,
+        );
       case 1:
-        return _wrap(Text(r.sop, style: mono.copyWith(color: p.tx2, fontSize: 11)));
+        return _wrap(
+          Text(r.sop, style: mono.copyWith(color: p.tx2, fontSize: 11)),
+        );
       case 2:
         // GoodCRC 取「它确认的那条报文」的类别色 —— 否则一屏心跳全同一个颜色，
         // 看不出谁在回谁。
-        final color = r.ackOf != null ? p.forKind(_kindOf(r.ackOf!) ?? r.kind) : fg;
+        final color = r.ackOf != null
+            ? p.forKind(_kindOf(r.ackOf!) ?? r.kind)
+            : fg;
         return _wrap(
           Tooltip(
             message: r.ackOf == null
@@ -212,7 +339,11 @@ class _PacketTableState extends State<PacketTable> {
                   child: Text(
                     r.msgType,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: color,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
                 if (r.warn > 0) ...[
@@ -240,13 +371,20 @@ class _PacketTableState extends State<PacketTable> {
             ),
             child: Text(
               r.role.isEmpty ? '—' : r.role,
-              style: TextStyle(fontSize: 10.5, color: rf, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 10.5,
+                color: rf,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           Alignment.center,
         );
       case 5:
-        return _wrap(Text(r.objText, style: mono.copyWith(color: p.tx2)), Alignment.centerRight);
+        return _wrap(
+          Text(r.objText, style: mono.copyWith(color: p.tx2)),
+          Alignment.centerRight,
+        );
       case 6:
         return _wrap(
           Text(r.elapsed, style: mono.copyWith(color: p.tx2, fontSize: 11)),
@@ -257,14 +395,20 @@ class _PacketTableState extends State<PacketTable> {
         final hasBus = doc.meta?.hasBus ?? false;
         return _wrap(
           Text(
-            hasBus ? '${r.vbus.toStringAsFixed(2)} / ${r.ibus.toStringAsFixed(3)}' : '—',
+            hasBus
+                ? '${r.vbus.toStringAsFixed(2)} / ${r.ibus.toStringAsFixed(3)}'
+                : '—',
             style: mono.copyWith(color: p.tx2, fontSize: 11),
           ),
           Alignment.center,
         );
       case 8:
         return _wrap(
-          Text(r.dataHex, overflow: TextOverflow.ellipsis, style: mono.copyWith(color: p.tx2)),
+          Text(
+            r.dataHex,
+            overflow: TextOverflow.ellipsis,
+            style: mono.copyWith(color: p.tx2),
+          ),
         );
       default:
         return _wrap(
@@ -277,10 +421,11 @@ class _PacketTableState extends State<PacketTable> {
     }
   }
 
-  Widget _wrap(Widget child, [Alignment align = Alignment.centerLeft]) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 8),
-    child: Align(alignment: align, child: child),
-  );
+  Widget _wrap(Widget child, [Alignment align = Alignment.centerLeft]) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Align(alignment: align, child: child),
+      );
 
   /// 取某条原始报文在**已装进来的页里**已知的类别（GoodCRC 取色用）。
   /// 找不到就退化成它自己的类别色 —— 这只是配色，取不到不影响正确性。
@@ -300,7 +445,8 @@ class _PacketTableState extends State<PacketTable> {
     if (unlocated > 0) {
       return _Centered(text: '已读入 $unlocated 行，没有一行能定位出报文');
     }
-    final filtered = doc.filters.hideGoodCrc ||
+    final filtered =
+        doc.filters.hideGoodCrc ||
         doc.filters.onlyBad ||
         doc.filters.onlyPower ||
         doc.filters.onlyEnter ||
@@ -328,7 +474,11 @@ class _WarnBadge extends StatelessWidget {
     ),
     child: Text(
       '$count',
-      style: TextStyle(fontSize: 9.5, color: p.warn, fontWeight: FontWeight.w700),
+      style: TextStyle(
+        fontSize: 9.5,
+        color: p.warn,
+        fontWeight: FontWeight.w700,
+      ),
     ),
   );
 }
@@ -352,7 +502,11 @@ class _Centered extends StatelessWidget {
             children: [
               Icon(Icons.inbox_outlined, size: 34, color: p.tx3),
               const SizedBox(height: 12),
-              Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: p.tx2)),
+              Text(
+                text,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: p.tx2),
+              ),
               if (hint != null) ...[
                 const SizedBox(height: 8),
                 Text(

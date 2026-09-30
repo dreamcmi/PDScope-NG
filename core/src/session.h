@@ -21,7 +21,7 @@
 
 namespace pdscope {
 
-enum class SourceKind { Atkcc, PowerzSqlite, PdStream };
+enum class SourceKind { Atkcc, PowerzSqlite, PdStream, UfcsStream };
 
 /** 打开失败时抛 Error，消息带文件类型与原因。 */
 class Session {
@@ -32,7 +32,7 @@ public:
     const std::string& name() const { return name_; }
     SourceKind sourceKind() const { return sourceKind_; }
     const char* sourceName() const;      // atkcc | powerz
-    const char* containerName() const;   // atkcc | sqlite | pdstream
+    const char* containerName() const;   // atkcc | sqlite | pdstream | ufcsstream
     const std::string& protocol() const { return protocol_; }
     uint64_t fileBytes() const { return fileSize_; }
 

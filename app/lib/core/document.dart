@@ -3,6 +3,8 @@
 // 「一份抓包 = 一个对象」：每份自带筛选、时间窗口、选中行、通道、时间轴档位、
 // 进度与错误。全局偏好（行高、详情宽度、主题、曲线区高度）**不放这里** ——
 // 那是「我怎么看」，不是「这份数据是什么」，切标签不该变。
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import 'engine.dart';
@@ -23,6 +25,12 @@ enum DocState {
 
 /// 时间轴的两档模拟量视图。
 enum TlMode { main, aux }
+
+/// 每份文档的两个时间轴档位分别保存纵轴视图。
+class TimelineYView {
+  double zoom = 1;
+  double pan = 0;
+}
 
 /// 报文列表的分页缓存。列表按页取，翻到哪取到哪 —— 几万条也不把整份塞进内存。
 class PagedRows {
@@ -93,7 +101,11 @@ class PagedRows {
 
 /// 一份抓包的全部界面状态。
 class CaptureDocument extends ChangeNotifier {
-  CaptureDocument({required this.id, required this.path, required this.displayName});
+  CaptureDocument({
+    required this.id,
+    required this.path,
+    required this.displayName,
+  });
 
   /// 引擎侧的会话编号（工作 isolate 用它找 session）。
   final int id;
@@ -112,8 +124,10 @@ class CaptureDocument extends ChangeNotifier {
 
   /// 选中行的**原始报文序号**（不是视图行号 —— 排序后两者不同）。
   int? selected;
+  int? selectedViewIndex;
   PacketDetail? detail;
   bool detailLoading = false;
+  int _detailRequest = 0;
 
   BusSeries? bus;
   bool busLoading = false;
@@ -131,6 +145,18 @@ class CaptureDocument extends ChangeNotifier {
   int? channel;
 
   TlMode tlMode = TlMode.main;
+  final Map<TlMode, TimelineYView> timelineY = {
+    for (final mode in TlMode.values) mode: TimelineYView(),
+  };
+
+  TimelineYView get timelineView => timelineY[tlMode]!;
+
+  void resetTimelineViews() {
+    for (final view in timelineY.values) {
+      view.zoom = 1;
+      view.pan = 0;
+    }
+  }
 
   /// 筛选控件需要「当前协议下所有出现过的报文类型 + 计数」。
   ///
@@ -157,8 +183,16 @@ class CaptureDocument extends ChangeNotifier {
   Future<void> applyFilters(EngineClient engine) async {
     await engine.setFilter(id, filters.toJson());
     final n = await engine.viewCount(id);
+    // A sort or search change may keep the same row count. Cached positions are
+    // still stale and must be fetched again from the new view.
+    rows.clear();
     rows.setTotal(n);
-    // 视图变了，选中行可能已经不在这份视图里；详情留着反而误导。
+    // 视图变了，选中行可能已经不在这份视图里。
+    selected = null;
+    selectedViewIndex = null;
+    detail = null;
+    _detailRequest++;
+    detailLoading = false;
     notifyListeners();
   }
 
@@ -184,20 +218,92 @@ class CaptureDocument extends ChangeNotifier {
     }
   }
 
-  Future<void> selectRow(EngineClient engine, int originalIndex) async {
+  Future<void> selectRow(
+    EngineClient engine,
+    int originalIndex, {
+    int? viewIndex,
+  }) async {
+    final request = ++_detailRequest;
     selected = originalIndex;
+    selectedViewIndex = viewIndex;
     detailLoading = true;
     notifyListeners();
     try {
       final j = await engine.detail(id, originalIndex);
+      if (request != _detailRequest) return;
       detail = j.isEmpty ? null : PacketDetail(j);
     } catch (e) {
+      if (request != _detailRequest) return;
       detail = null;
       error = '$e';
     } finally {
-      detailLoading = false;
-      notifyListeners();
+      if (request == _detailRequest) {
+        detailLoading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  /// 按当前筛选和排序后的可见行导航详情。
+  Future<void> stepDetail(EngineClient engine, int delta) async {
+    if (rows.total == 0) return;
+    final current = selectedViewIndex;
+    final target = ((current ?? -1) + delta).clamp(0, rows.total - 1).toInt();
+    if (rows.at(target) == null) {
+      await loadPage(engine, target ~/ rows.pageSize);
+    }
+    final row = rows.at(target);
+    if (row != null) await selectRow(engine, row.index, viewIndex: target);
+  }
+
+  /// 在当前筛选视图中找时间最近的一条，供时间轴单击使用。
+  Future<void> selectNearestAtTime(EngineClient engine, double seconds) async {
+    var bestDistance = double.infinity;
+    int? bestIndex;
+    int? bestViewIndex;
+    for (var offset = 0; offset < rows.total; offset += rows.pageSize) {
+      final page = await engine.page(
+        id,
+        offset,
+        math.min(rows.pageSize, rows.total - offset),
+      );
+      for (var i = 0; i < page.length; i++) {
+        final row = PacketRow(page[i]);
+        final distance = (row.timeMs / 1000 - seconds).abs();
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = row.index;
+          bestViewIndex = offset + i;
+        }
+      }
+    }
+    if (bestIndex != null) {
+      await selectRow(engine, bestIndex, viewIndex: bestViewIndex);
+    }
+  }
+
+  /// 将时间筛选收紧到当前可见报文的最早和最晚采样点。
+  Future<void> fitTimeToCurrentView(EngineClient engine) async {
+    if (rows.total == 0) return;
+    var lo = 0x7FFFFFFFFFFFFFFF;
+    var hi = 0;
+    for (var offset = 0; offset < rows.total; offset += rows.pageSize) {
+      final page = await engine.page(
+        id,
+        offset,
+        math.min(rows.pageSize, rows.total - offset),
+      );
+      for (final raw in page) {
+        final row = PacketRow(raw);
+        lo = math.min(lo, row.startSample);
+        hi = math.max(hi, row.endSample);
+      }
+    }
+    final total = stats?.totalSamples ?? meta?.totalSamples ?? 0;
+    if (total <= 0 || hi < lo) return;
+    filters.tFrom = (lo / total).clamp(0.0, 1.0);
+    filters.tTo = (hi / total).clamp(0.0, 1.0);
+    await applyFilters(engine);
   }
 
   Future<void> loadBus(EngineClient engine, {int targetPoints = 2400}) async {

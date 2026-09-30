@@ -11,19 +11,16 @@
 //   · GUI 的 CSV 导出走「当前视图」，与命令行「导全部报文」刻意不同
 //
 // 本机样本不入库（私有抓包），所以**样本不存在时整个用例跳过**而不是失败。
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdscope_app/core/engine.dart';
+import 'package:pdscope_app/core/document.dart';
+import 'package:pdscope_app/core/filters.dart';
 import 'package:pdscope_app/core/models.dart';
+import 'sample_fixture.dart';
 
 /// 找一份本机样本；找不到返回 null（私有抓包不在仓库里，缺失是正常情况）。
 String? _sample(String name) {
-  for (final base in ['..', '.', '../..']) {
-    final f = File('$base${Platform.pathSeparator}$name');
-    if (f.existsSync()) return f.absolute.path;
-  }
-  return null;
+  return sampleFixture(name);
 }
 
 void main() {
@@ -70,6 +67,11 @@ void main() {
     expect(rows, isNotEmpty);
     expect(rows.first['msgType'], isA<String>());
     expect(rows.first['crc'], 'none');
+    expect(
+      rows.where((r) => r['msgType'] == 'Accept').first['summary'],
+      '接收请求',
+      reason: 'C ABI 返回的 JSON 是 UTF-8，FFI 不能逐字节按 Latin-1 解码',
+    );
 
     final detail = await engine.detail(101, 0);
     expect(detail['details'], isNotEmpty, reason: '详情应当有分组条目');
@@ -105,6 +107,69 @@ void main() {
     await engine.close(102);
   });
 
+  test('UFCS 记录流按内容识别为 UFCS，帧数与 SQLite 一致', () async {
+    final stream = _sample('rawdata/CTK10UL_X300U_UFCS.ufcsStream');
+    final sqlite = _sample('rawdata/CTK10UL_X300U_UFCS.sqlite');
+    if (stream == null || sqlite == null) {
+      markTestSkipped('本机没有成对的 UFCS 样本，跳过');
+      return;
+    }
+
+    final streamMeta = await engine.openFile(106, stream);
+    final sqliteMeta = await engine.openFile(107, sqlite);
+    expect(streamMeta['container'], 'ufcsstream');
+    expect(streamMeta['protocol'], 'UFCS');
+    expect(sqliteMeta['protocol'], 'UFCS');
+
+    final streamStats = await engine.decode(106);
+    final sqliteStats = await engine.decode(107);
+    expect(streamStats!['packetCount'], sqliteStats!['packetCount']);
+    expect(streamStats['ufcsUnlocatedRows'], 0);
+    expect(streamStats['ufcsDirInferred'], 0);
+
+    await engine.close(106);
+    await engine.close(107);
+  });
+
+  test('排序后条数不变也会作废旧页缓存', () async {
+    final path = _sample('山泽60w-ip18pro.sqlite');
+    if (path == null) {
+      markTestSkipped('本机没有 PD 样本，跳过');
+      return;
+    }
+    final meta = await engine.openFile(108, path);
+    await engine.decode(108);
+    final doc = CaptureDocument(id: 108, path: path, displayName: 'sort-test')
+      ..meta = CaptureMeta(meta)
+      ..filters = FilterState.defaults('pd')
+      ..state = DocState.done;
+    await doc.applyFilters(engine);
+    await doc.loadPage(engine, 0);
+    final firstIndex = doc.rows.at(0)!.index;
+    final count = doc.rows.total;
+
+    doc.filters.sortKey = SortKey.timeMs;
+    doc.filters.sortAsc = false;
+    await doc.applyFilters(engine);
+    expect(doc.rows.total, count);
+    expect(doc.rows.at(0), isNull, reason: '相同条数的新视图不得沿用旧位置');
+    await doc.loadPage(engine, 0);
+    expect(doc.rows.at(0)!.index, isNot(firstIndex));
+    final secondIndex = doc.rows.at(1)!.index;
+    await doc.selectRow(engine, doc.rows.at(0)!.index, viewIndex: 0);
+    await doc.stepDetail(engine, 1);
+    expect(doc.selected, secondIndex, reason: '详情导航按筛选后的顺序前进');
+    final earliest = (await engine.page(108, count - 1, 1)).first['index'];
+    await doc.selectNearestAtTime(engine, 0);
+    expect(doc.selected, earliest, reason: '时间轴单击按当前视图找最近报文');
+    await doc.fitTimeToCurrentView(engine);
+    expect(doc.filters.tFrom, inInclusiveRange(0, 1));
+    expect(doc.filters.tTo, inInclusiveRange(doc.filters.tFrom, 1));
+
+    await engine.close(108);
+    doc.dispose();
+  });
+
   test('ATK-C 的 .atkcc：按 ZIP 魔数识别，采样率与通道都拿得到', () async {
     final path = _sample('安可60w-ip18pro.atkcc');
     if (path == null) {
@@ -123,10 +188,7 @@ void main() {
     expect(stats!['packetCount'], greaterThan(0));
 
     // 采样率的三级策略要给出**来源标注**，界面顶栏就是照它显示的。
-    expect(
-      stats['sampleRateSource'],
-      anyOf('declared', 'measured', 'default'),
-    );
+    expect(stats['sampleRateSource'], anyOf('declared', 'measured', 'default'));
     expect(stats['sampleRate'], greaterThan(0));
 
     await engine.close(103);
@@ -134,7 +196,8 @@ void main() {
 
   test('type_counts 与 packet_marks 和报表总数自洽', () async {
     // 用 UFCS 那份大样本（若没有则退回 PD 样本）。
-    final path = _sample('ufcs_vivo_x300u.sqlite') ?? _sample('山泽60w-ip18pro.sqlite');
+    final path =
+        _sample('ufcs_vivo_x300u.sqlite') ?? _sample('山泽60w-ip18pro.sqlite');
     if (path == null) {
       markTestSkipped('本机没有样本，跳过');
       return;
@@ -148,11 +211,7 @@ void main() {
     final counts = await engine.typeCounts(104);
     expect(counts, isNotEmpty);
     final sum = counts.values.fold<int>(0, (a, b) => a + b);
-    expect(
-      sum,
-      packetCount,
-      reason: '类型计数是「全部报文」的分布，和应当等于报文总数（不受筛选影响）',
-    );
+    expect(sum, packetCount, reason: '类型计数是「全部报文」的分布，和应当等于报文总数（不受筛选影响）');
 
     // 时间轴标记：条数与报文总数一致，类别编号落在约定范围内。
     final marks = PacketMarks.decode(await engine.packetMarks(104));

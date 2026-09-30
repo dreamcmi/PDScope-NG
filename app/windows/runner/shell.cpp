@@ -180,6 +180,8 @@ HMENU BuildMenu() {
 
   HMENU file = ::CreatePopupMenu();
   ::AppendMenuW(file, MF_STRING, kMenuOpen, L"打开抓包…\tCtrl+O");
+  ::AppendMenuW(file, MF_STRING, kMenuClose, L"关闭当前标签\tCtrl+W");
+  ::AppendMenuW(file, MF_STRING, kMenuCloseAll, L"关闭全部抓包");
   ::AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   ::AppendMenuW(file, MF_STRING, kMenuExportCsv, L"导出 CSV（当前筛选结果）");
   ::AppendMenuW(file, MF_STRING, kMenuExportJson, L"导出 JSON（全部报文）");
@@ -188,7 +190,9 @@ HMENU BuildMenu() {
   ::AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"文件(&F)");
 
   HMENU view = ::CreatePopupMenu();
+  ::AppendMenuW(view, MF_STRING, kMenuSearch, L"搜索报文\tCtrl+F");
   ::AppendMenuW(view, MF_STRING, kMenuToggleTheme, L"切换明暗主题\tT");
+  ::AppendMenuW(view, MF_STRING, kMenuDense, L"紧凑 / 舒适行高");
   ::AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
   ::AppendMenuW(view, MF_STRING, kMenuToggleFilters, L"显示筛选栏");
   ::AppendMenuW(view, MF_STRING, kMenuToggleDetail, L"显示详情面板");
@@ -211,10 +215,14 @@ void ApplyMenuState(HWND window, HMENU menu, const MenuState& state) {
     const UINT how = MF_BYCOMMAND | (state.has_document ? MF_ENABLED : MF_GRAYED);
     ::EnableMenuItem(file, kMenuExportCsv, how);
     ::EnableMenuItem(file, kMenuExportJson, how);
+    ::EnableMenuItem(file, kMenuClose, how);
+    ::EnableMenuItem(file, kMenuCloseAll, how);
   }
 
   HMENU view = ::GetSubMenu(menu, kSubView);
   if (view != nullptr) {
+    ::EnableMenuItem(view, kMenuSearch,
+                     MF_BYCOMMAND | (state.has_document ? MF_ENABLED : MF_GRAYED));
     ::CheckMenuItem(view, kMenuToggleFilters,
                     MF_BYCOMMAND |
                         (state.filters_shown ? MF_CHECKED : MF_UNCHECKED));

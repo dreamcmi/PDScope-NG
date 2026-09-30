@@ -223,7 +223,7 @@ class CaptureMeta {
 
   final String name;
   final String source; // atkcc | powerz
-  final String container; // atkcc | sqlite | pdstream
+  final String container; // atkcc | sqlite | pdstream | ufcsstream
   final String protocol; // USB PD | UFCS
   final int fileBytes;
   final bool decoded;
@@ -249,6 +249,7 @@ class CaptureMeta {
 
   bool get isUfcs => protocol == 'UFCS';
   bool get isPdStream => container == 'pdstream';
+  bool get isUfcsStream => container == 'ufcsstream';
   bool get isPowerz => source == 'powerz';
 }
 

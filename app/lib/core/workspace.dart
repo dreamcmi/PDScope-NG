@@ -29,7 +29,7 @@ class _Job {
 }
 
 class Workspace extends ChangeNotifier {
-  Workspace(this.engine);
+  Workspace(this.engine, {Prefs? prefs}) : prefs = prefs ?? Prefs();
 
   final Future<EngineClient> engine;
   EngineClient? _engine;
@@ -38,10 +38,12 @@ class Workspace extends ChangeNotifier {
   int _activeIndex = -1;
   int _nextId = 1;
 
-  final Prefs prefs = Prefs();
+  final Prefs prefs;
 
   CaptureDocument? get active =>
-      (_activeIndex >= 0 && _activeIndex < docs.length) ? docs[_activeIndex] : null;
+      (_activeIndex >= 0 && _activeIndex < docs.length)
+      ? docs[_activeIndex]
+      : null;
 
   int get activeIndex => _activeIndex;
 
@@ -58,6 +60,7 @@ class Workspace extends ChangeNotifier {
   /* ── 串行队列 ─────────────────────────────────────────────────── */
 
   final List<_Job> _queue = [];
+  final Set<int> _switchingChannels = {};
   bool _pumping = false;
   String _currentJob = '';
 
@@ -102,16 +105,28 @@ class Workspace extends ChangeNotifier {
   Future<List<CaptureDocument>> openFiles(List<String> paths) async {
     final out = <CaptureDocument>[];
     for (final p in paths) {
-      out.add(await openFile(p));
+      // Create every tab and queue its container read, then decode only the tab
+      // that ends up active. Decoding every intermediate tab makes a mixed drop
+      // wait behind captures the user has not opened yet.
+      out.add(await openFile(p, activate: false));
+    }
+    if (out.isNotEmpty) {
+      _activeIndex = docs.indexOf(out.last);
+      notifyListeners();
+      unawaited(decode(out.last));
     }
     return out;
   }
 
-  Future<CaptureDocument> openFile(String path) async {
+  Future<CaptureDocument> openFile(String path, {bool activate = true}) async {
     final display = path.split(RegExp(r'[\\/]')).last;
-    final doc = CaptureDocument(id: _nextId++, path: path, displayName: display);
+    final doc = CaptureDocument(
+      id: _nextId++,
+      path: path,
+      displayName: display,
+    );
     docs.add(doc);
-    _activeIndex = docs.length - 1;
+    if (activate) _activeIndex = docs.length - 1;
     notifyListeners();
 
     // 容器加载与解码分开：先只把标签与元数据弄出来。
@@ -122,7 +137,9 @@ class Workspace extends ChangeNotifier {
           final metaJson = await e.openFile(doc.id, path);
           doc.meta = CaptureMeta(metaJson);
           doc.filters = FilterState.defaults(doc.isUfcs ? 'UFCS' : 'pd');
-          doc.channel = doc.meta!.channels.length == 1 ? doc.meta!.channels.first.channel : null;
+          doc.channel = doc.meta!.channels.length == 1
+              ? doc.meta!.channels.first.channel
+              : null;
           await doc.applyFilters(e);
           doc.state = DocState.ready;
           doc.notifyListeners();
@@ -135,19 +152,24 @@ class Workspace extends ChangeNotifier {
       }),
     );
 
-    // 打开即激活 ⇒ 顺手把解码排上（同一条队列，自然排在加载之后）。
-    unawaited(decode(doc));
+    if (activate) unawaited(decode(doc));
     return doc;
   }
 
   /// 懒解码：已解码、正在解、或打不开的文件直接返回。
   Future<void> decode(CaptureDocument doc) async {
-    if (doc.decoded || doc.state == DocState.decoding || doc.state == DocState.failed) return;
+    if (!docs.contains(doc) ||
+        doc.decoded ||
+        doc.state == DocState.decoding ||
+        doc.state == DocState.failed) {
+      return;
+    }
     // 等容器加载完（上一步可能还排在队列里）。
     await _awaitOpen(doc);
-    if (doc.state != DocState.ready) return;
+    if (!docs.contains(doc) || doc.state != DocState.ready) return;
 
     await enqueue('解码 ${doc.displayName}', () async {
+      if (!docs.contains(doc)) return;
       doc.state = DocState.decoding;
       doc.notifyListeners();
       final e = await ready;
@@ -189,6 +211,7 @@ class Workspace extends ChangeNotifier {
   /// 等待容器加载结束（轮询状态；队列是串行的，所以解排在后面天然有序）。
   Future<void> _awaitOpen(CaptureDocument doc) async {
     for (var i = 0; i < 600; i++) {
+      if (!docs.contains(doc)) return;
       if (doc.state != DocState.opening) return;
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
@@ -197,6 +220,55 @@ class Workspace extends ChangeNotifier {
   Future<void> cancel(CaptureDocument doc) async {
     final e = await ready;
     e.cancel(doc.id);
+  }
+
+  /// ATK-C 切换通道需要新会话：核心会缓存一次解码的结果。
+  Future<void> switchChannel(CaptureDocument doc, int channel) async {
+    if (!docs.contains(doc) ||
+        doc.meta?.container != 'atkcc' ||
+        !doc.meta!.channels.any((c) => c.channel == channel) ||
+        doc.channel == channel ||
+        !_switchingChannels.add(doc.id)) {
+      return;
+    }
+    try {
+      final e = await ready;
+      if (doc.state == DocState.decoding) e.cancel(doc.id);
+      await enqueue<void>('切换 ${doc.displayName} 到 CH$channel', () async {
+        await e.close(doc.id);
+        doc.state = DocState.opening;
+        doc.error = null;
+        doc.notice = null;
+        doc.stats = null;
+        doc.progress = null;
+        doc.selected = null;
+        doc.selectedViewIndex = null;
+        doc.detail = null;
+        doc.rows.setTotal(0);
+        doc.typeCounts = const {};
+        doc.marks = PacketMarks.empty;
+        doc.bus = null;
+        doc.busAttempted = false;
+        doc.wave = null;
+        doc.filters.tFrom = 0;
+        doc.filters.tTo = 1;
+        doc.resetTimelineViews();
+        doc.notifyListeners();
+        try {
+          doc.meta = CaptureMeta(await e.openFile(doc.id, doc.path));
+          doc.channel = channel;
+          await doc.applyFilters(e);
+          doc.state = DocState.ready;
+        } catch (err) {
+          doc.error = '$err';
+          doc.state = DocState.failed;
+        }
+        doc.notifyListeners();
+      });
+      if (docs.contains(doc) && doc.state == DocState.ready) await decode(doc);
+    } finally {
+      _switchingChannels.remove(doc.id);
+    }
   }
 
   void activate(int index) {
@@ -212,27 +284,34 @@ class Workspace extends ChangeNotifier {
     if (n >= 1 && n <= docs.length) activate(n - 1);
   }
 
-  Future<void> closeAt(int index) async {
+  Future<void> closeAt(int index, {bool activateNext = true}) async {
     if (index < 0 || index >= docs.length) return;
     final doc = docs.removeAt(index);
+    final wasActive = index == _activeIndex;
+    if (index < _activeIndex) _activeIndex--;
     if (_activeIndex >= docs.length) _activeIndex = docs.length - 1;
     if (_activeIndex < 0) _activeIndex = -1;
     notifyListeners();
     final e = await ready;
-    await e.close(doc.id);
+    if (doc.state == DocState.decoding) e.cancel(doc.id);
+    // Opening, decoding and closing the same native session must stay in order.
+    // Keep the document alive until earlier jobs have finished notifying it.
+    await enqueue<void>('关闭 ${doc.displayName}', () => e.close(doc.id));
     doc.dispose();
+    if (activateNext && wasActive && active != null) unawaited(decode(active!));
   }
 
   Future<void> closeOthers(int index) async {
     final keep = docs[index];
     for (var i = docs.length - 1; i >= 0; i--) {
-      if (docs[i] != keep) await closeAt(i);
+      if (docs[i] != keep) await closeAt(i, activateNext: false);
     }
+    if (active != null) unawaited(decode(active!));
   }
 
   Future<void> closeAll() async {
     for (var i = docs.length - 1; i >= 0; i--) {
-      await closeAt(i);
+      await closeAt(i, activateNext: false);
     }
   }
 

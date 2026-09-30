@@ -8,6 +8,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/document.dart';
 import '../core/palette.dart';
@@ -62,48 +63,60 @@ class _Tab extends StatelessWidget {
       child: GestureDetector(
         onSecondaryTapUp: (d) => _menu(context, d.globalPosition),
         onTertiaryTapUp: (_) => unawaited(workspace.closeAt(index)),
-        child: InkWell(
-          onTap: () => workspace.activate(index),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: active ? p.bg2 : p.panel,
-              border: Border(
-                right: BorderSide(color: p.line),
-                top: BorderSide(
-                  color: active ? p.accent : Colors.transparent,
-                  width: 2,
+        child: Focus(
+          skipTraversal: true,
+          onKeyEvent: (_, event) {
+            if (event is! KeyDownEvent) return KeyEventResult.ignored;
+            if (event.logicalKey == LogicalKeyboardKey.delete ||
+                event.logicalKey == LogicalKeyboardKey.backspace) {
+              unawaited(workspace.closeAt(index));
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: InkWell(
+            onTap: () => workspace.activate(index),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: active ? p.bg2 : p.panel,
+                border: Border(
+                  right: BorderSide(color: p.line),
+                  top: BorderSide(
+                    color: active ? p.accent : Colors.transparent,
+                    width: 2,
+                  ),
                 ),
               ),
-            ),
-            child: Row(
-              children: [
-                _dot(p),
-                const SizedBox(width: 6),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 200),
-                  child: Text(
-                    doc.displayName,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: active ? p.tx : p.tx2,
-                      fontWeight: active ? FontWeight.w500 : FontWeight.w400,
+              child: Row(
+                children: [
+                  _dot(p),
+                  const SizedBox(width: 6),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    child: Text(
+                      doc.displayName,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: active ? p.tx : p.tx2,
+                        fontWeight: active ? FontWeight.w500 : FontWeight.w400,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                if (doc.hasPackets) _badge(p),
-                const SizedBox(width: 4),
-                InkWell(
-                  onTap: () => unawaited(workspace.closeAt(index)),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: Icon(Icons.close, size: 13, color: p.tx3),
+                  const SizedBox(width: 6),
+                  if (doc.decoded) _badge(p),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () => unawaited(workspace.closeAt(index)),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(Icons.close, size: 13, color: p.tx3),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -140,14 +153,19 @@ class _Tab extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
     ),
     child: Text(
-      '${doc.rows.total}',
-      style: TextStyle(fontSize: 10.5, color: p.accent, fontWeight: FontWeight.w600),
+      '${doc.stats?.packetCount ?? 0}',
+      style: TextStyle(
+        fontSize: 10.5,
+        color: p.accent,
+        fontWeight: FontWeight.w600,
+      ),
     ),
   );
 
   Future<void> _menu(BuildContext context, Offset at) async {
     final p = PaletteScope.of(context);
-    final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -156,9 +174,18 @@ class _Tab extends StatelessWidget {
       ),
       color: p.panel,
       items: const [
-        PopupMenuItem(value: 'close', child: Text('关闭', style: TextStyle(fontSize: 12.5))),
-        PopupMenuItem(value: 'others', child: Text('关闭其它', style: TextStyle(fontSize: 12.5))),
-        PopupMenuItem(value: 'all', child: Text('全部关闭', style: TextStyle(fontSize: 12.5))),
+        PopupMenuItem(
+          value: 'close',
+          child: Text('关闭', style: TextStyle(fontSize: 12.5)),
+        ),
+        PopupMenuItem(
+          value: 'others',
+          child: Text('关闭其它', style: TextStyle(fontSize: 12.5)),
+        ),
+        PopupMenuItem(
+          value: 'all',
+          child: Text('全部关闭', style: TextStyle(fontSize: 12.5)),
+        ),
       ],
     );
     if (choice == 'close') await workspace.closeAt(index);

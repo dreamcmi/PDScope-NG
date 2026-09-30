@@ -194,6 +194,7 @@ const char* Session::containerName() const {
     switch (sourceKind_) {
         case SourceKind::Atkcc: return "atkcc";
         case SourceKind::PdStream: return "pdstream";
+        case SourceKind::UfcsStream: return "ufcsstream";
         default: return "sqlite";
     }
 }
@@ -239,11 +240,12 @@ void Session::dispatch(const Bytes& bytes, const std::string& nameHint) {
         failFormat("是 SQLite 库，但没有 pd_table / ufcs_table —— 不是 POWER-Z 导出");
     }
 
-    // ③ 结构自证 → .pdStream
+    // ③ 记录流结构自证，再从 Raw 内容区分 PD / UFCS。
     if (sniffPdStream(bytes)) {
-        powerz_ = openPdStream(bytes);
-        sourceKind_ = SourceKind::PdStream;
-        protocol_ = "USB PD";
+        const PowerzKind kind = sniffStreamProtocol(readPdStream(bytes));
+        powerz_ = openPdStream(bytes, kind);
+        sourceKind_ = kind == PowerzKind::Pd ? SourceKind::PdStream : SourceKind::UfcsStream;
+        protocol_ = kind == PowerzKind::Pd ? "USB PD" : "UFCS";
         return;
     }
 

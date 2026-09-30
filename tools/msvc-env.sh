@@ -38,6 +38,9 @@ else
     fi
     [ -z "$_vs" ] && _vs="C:/Program Files/Microsoft Visual Studio/2022/Community"
 fi
+# Git Bash can open C:/... paths, but PATH entries must use its /c/... form.
+# vswhere reports a Windows path, and user overrides may do the same.
+if command -v cygpath >/dev/null 2>&1; then _vs="$(cygpath -u "$_vs")"; fi
 _pdscope_need "$_vs" "Visual Studio 安装目录" || return 1
 
 # ── MSVC 工具集（取版本号最大的那份）────────────────────────────────
@@ -71,7 +74,7 @@ export PATH="$_msvc/bin/Hostx64/x64:$PATH"
 # 编译器自检会在**链接那一步**失败，报出来的错看着像「找不到编译器」，其实编译器早就过了。
 export PATH="$_sdk_root/bin/$_sdk_ver/x64:$PATH"
 # Ninja：优先用 VS 自带的那份（Python 的 pip 版不一定装了）
-export PATH="$PATH:/c/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+export PATH="$PATH:$_vs/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
 
 echo "[msvc-env] MSVC $_msvc_ver  ·  Windows SDK $_sdk_ver"
 "$_msvc/bin/Hostx64/x64/cl.exe" 2>&1 | head -1

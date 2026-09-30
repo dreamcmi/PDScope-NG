@@ -66,7 +66,11 @@ class PdScopeApp extends StatelessWidget {
             : const Color(0xF01B2027),
         borderRadius: BorderRadius.circular(6),
       ),
-      textStyle: const TextStyle(color: Colors.white, fontSize: 11.5, height: 1.5),
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 11.5,
+        height: 1.5,
+      ),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: p.accent),
     scrollbarTheme: ScrollbarThemeData(
@@ -147,7 +151,9 @@ class _AppShellState extends State<AppShell> {
               children: [
                 TopBar(workspace: ws, doc: doc, searchFocus: searchFocus),
                 if (ws.docs.isNotEmpty) TabStrip(workspace: ws),
-                Expanded(child: _Body(workspace: ws, doc: doc)),
+                Expanded(
+                  child: _Body(workspace: ws, doc: doc),
+                ),
                 _StatusBar(workspace: ws, doc: doc),
               ],
             ),
@@ -162,13 +168,40 @@ class _AppShellState extends State<AppShell> {
   /// ⚠ 字母快捷键只在「没在输入框里」时才认 —— 否则在搜索框里打一个 `t`
   /// 会顺手把主题切了。
   KeyEventResult _handleKey(CaptureDocument? doc, KeyEvent ev) {
-    if (ev is! KeyDownEvent) return KeyEventResult.ignored;
+    final arrow =
+        ev.logicalKey == LogicalKeyboardKey.arrowUp ||
+        ev.logicalKey == LogicalKeyboardKey.arrowDown;
+    if (ev is! KeyDownEvent && !(ev is KeyRepeatEvent && arrow)) {
+      return KeyEventResult.ignored;
+    }
     final typing = searchFocus.hasFocus;
 
     if (HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed) {
       if (ev.logicalKey == LogicalKeyboardKey.keyO) {
         unawaited(openFilesViaDialog(ws));
+        return KeyEventResult.handled;
+      }
+      if (ev.logicalKey == LogicalKeyboardKey.keyW) {
+        if (ws.activeIndex >= 0) unawaited(ws.closeAt(ws.activeIndex));
+        return KeyEventResult.handled;
+      }
+      if (ev.logicalKey == LogicalKeyboardKey.keyF) {
+        searchFocus.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (ev.logicalKey == LogicalKeyboardKey.keyS) {
+        if (doc != null && doc.decoded) {
+          unawaited(exportViaDialog(context, ws, doc, 'csv'));
+        }
+        return KeyEventResult.handled;
+      }
+      if (ev.logicalKey == LogicalKeyboardKey.keyT) {
+        ws.prefs.toggleTheme();
+        return KeyEventResult.handled;
+      }
+      if (ev.logicalKey == LogicalKeyboardKey.keyB) {
+        ws.prefs.filtersCollapsed = !ws.prefs.filtersCollapsed;
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
@@ -187,6 +220,15 @@ class _AppShellState extends State<AppShell> {
     if (typing) return KeyEventResult.ignored;
 
     switch (ev.logicalKey) {
+      case LogicalKeyboardKey.arrowUp:
+      case LogicalKeyboardKey.arrowDown:
+        if (doc == null || !doc.decoded || doc.rows.total == 0) {
+          return KeyEventResult.ignored;
+        }
+        ws.prefs.detailCollapsed = false;
+        final delta = ev.logicalKey == LogicalKeyboardKey.arrowUp ? -1 : 1;
+        unawaited(ws.ready.then((e) => doc.stepDetail(e, delta)));
+        return KeyEventResult.handled;
       case LogicalKeyboardKey.slash:
         searchFocus.requestFocus();
         return KeyEventResult.handled;
@@ -221,11 +263,23 @@ class _AppShellState extends State<AppShell> {
       case 'openFile':
         unawaited(openFilesViaDialog(ws));
         break;
+      case 'closeCurrent':
+        if (ws.activeIndex >= 0) unawaited(ws.closeAt(ws.activeIndex));
+        break;
+      case 'closeAll':
+        unawaited(ws.closeAll());
+        break;
       case 'exportCsv':
         unawaited(exportViaDialog(context, ws, ws.active, 'csv'));
         break;
       case 'exportJson':
         unawaited(exportViaDialog(context, ws, ws.active, 'json'));
+        break;
+      case 'search':
+        searchFocus.requestFocus();
+        break;
+      case 'toggleDense':
+        ws.prefs.compact = !ws.prefs.compact;
         break;
       case 'toggleTheme':
         ws.prefs.toggleTheme();
@@ -259,8 +313,11 @@ class _AppShellState extends State<AppShell> {
   void _reportShellState() {
     final prefs = ws.prefs;
     final active = ws.active;
-    final title = active == null ? 'PDScope' : 'PDScope — ${active.displayName}';
-    final key = '$title|${ws.docs.isNotEmpty}'
+    final title = active == null
+        ? 'PDScope'
+        : 'PDScope — ${active.displayName}';
+    final key =
+        '$title|${ws.docs.isNotEmpty}'
         '|${prefs.filtersCollapsed}|${prefs.detailCollapsed}';
     if (key == _reportedShellState) return;
     _reportedShellState = key;
@@ -350,7 +407,9 @@ class _Body extends StatelessWidget {
             child: Column(
               children: [
                 if (d.notice != null) _NoticeBar(text: d.notice!),
-                Expanded(child: PacketTable(workspace: workspace, doc: d)),
+                Expanded(
+                  child: PacketTable(workspace: workspace, doc: d),
+                ),
                 _ResizeBar(
                   axis: Axis.vertical,
                   onDrag: (dy) => prefs.tlH -= dy,
@@ -466,15 +525,21 @@ class _ResizeBarState extends State<_ResizeBar> {
     final p = PaletteScope.of(context);
     final horizontal = widget.axis == Axis.horizontal;
     return MouseRegion(
-      cursor: horizontal ? SystemMouseCursors.resizeColumn : SystemMouseCursors.resizeRow,
+      cursor: horizontal
+          ? SystemMouseCursors.resizeColumn
+          : SystemMouseCursors.resizeRow,
       onEnter: (_) => setState(() => _hot = true),
       onExit: (_) => setState(() => _hot = false),
       child: Tooltip(
         message: widget.tooltip,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onVerticalDragUpdate: horizontal ? null : (d) => widget.onDrag(d.delta.dy),
-          onHorizontalDragUpdate: horizontal ? (d) => widget.onDrag(d.delta.dx) : null,
+          onVerticalDragUpdate: horizontal
+              ? null
+              : (d) => widget.onDrag(d.delta.dy),
+          onHorizontalDragUpdate: horizontal
+              ? (d) => widget.onDrag(d.delta.dx)
+              : null,
           onDoubleTap: widget.onReset,
           child: Container(
             width: horizontal ? 5 : null,
@@ -543,7 +608,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           Text(
-            '支持 .atkcc、.sqlite、.pdStream',
+            '支持 .atkcc、.sqlite、.pdStream、.ufcsStream',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11.5, color: p.tx3, height: 1.7),
           ),
@@ -586,14 +651,23 @@ class _StatusBar extends StatelessWidget {
             SizedBox(
               width: 10,
               height: 10,
-              child: CircularProgressIndicator(strokeWidth: 1.6, color: p.accent),
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                color: p.accent,
+              ),
             ),
             const SizedBox(width: 7),
-            Text(workspace.currentJob, style: TextStyle(fontSize: 11.5, color: p.tx2)),
+            Text(
+              workspace.currentJob,
+              style: TextStyle(fontSize: 11.5, color: p.tx2),
+            ),
           ] else
             Text('就绪', style: TextStyle(fontSize: 11.5, color: p.tx3)),
           const Spacer(),
-          Text(parts.join(' · '), style: TextStyle(fontSize: 11.5, color: p.tx3)),
+          Text(
+            parts.join(' · '),
+            style: TextStyle(fontSize: 11.5, color: p.tx3),
+          ),
         ],
       ),
     );

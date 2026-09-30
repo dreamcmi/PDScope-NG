@@ -7,6 +7,7 @@
 // 上面那条是有意为之：函数指针字段的 typedef 保持私有，是为了不把 C 的原始签名
 // 扩散成对外 API；对外可用的是本文件末尾那几个封装（callBufAsBytes / jsonOf）与
 // engine.dart 里的语义方法。
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
@@ -287,7 +288,7 @@ class PdscopeBindings {
       if (st != Status.ok) throw PdscopeException('调用失败（${statusName(st)}）', st);
       final ref = buf.ref;
       if (ref.data == nullptr || ref.len == 0) return '';
-      return String.fromCharCodes(ref.data.asTypedList(ref.len));
+      return utf8.decode(ref.data.asTypedList(ref.len));
     } finally {
       bufFree(buf);
       calloc.free(buf);
