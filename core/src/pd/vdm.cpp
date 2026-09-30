@@ -17,7 +17,7 @@ std::string binPad(int v, int n) {
 }
 
 std::string stripParen(const std::string& s) {
-  size_t p = s.find('（');
+  size_t p = s.find("（");
   if (p == std::string::npos) return s;
   return s.substr(0, p);
 }

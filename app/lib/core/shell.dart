@@ -5,7 +5,7 @@
 // 它交给 Dart 的**只有路径** —— 是不是抓包、是 ATK-C 还是 POWER-Z，
 // 仍然由核心按内容判定。
 //
-// ⚠ 没有外壳的平台（macOS/Linux 尚未实现、测试环境）**没有**这一层，
+// ⚠ 测试环境可能没有原生外壳，
 //   所以通道没人应答必须降级成「什么都没发生」，不能抛到界面上。
 import 'dart:io';
 
@@ -49,7 +49,7 @@ class ShellCommands {
 class ShellBridge {
   ShellBridge._();
 
-  /// 与 Windows 外壳约定的通道名，和 `runner/flutter_window.cpp` 里的一致。
+  /// Windows、macOS、Linux 外壳共用的通道。
   static const MethodChannel _channel = MethodChannel('pdscope/shell');
 
   static final ShellCommands commands = ShellCommands();
@@ -77,7 +77,7 @@ class ShellBridge {
       return null;
     });
 
-    if (!Platform.isWindows) return;
+    if (!_desktop) return;
     await _invoke('ready');
   }
 
@@ -91,7 +91,7 @@ class ShellBridge {
     required bool detailShown,
     required String title,
   }) async {
-    if (!Platform.isWindows || !_attached) return;
+    if (!_desktop || !_attached) return;
     await _invoke('shellState', {
       'hasDoc': hasDocument,
       'filters': filtersShown,
@@ -110,4 +110,7 @@ class ShellBridge {
       return;
     }
   }
+
+  static bool get _desktop =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 }

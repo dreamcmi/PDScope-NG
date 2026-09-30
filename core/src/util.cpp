@@ -115,9 +115,18 @@ std::string numToStr(double v) {
     }
     // Math.round(v * 1000) / 1000 后再按最短往返表示打印
     double r = std::round(v * 1000.0) / 1000.0;
+#if defined(__APPLE__)
+    // libc++ only provides floating-point to_chars when targeting macOS 13.3+.
+    // The vendored JSON formatter also emits a shortest round-trip decimal.
+    std::string text = json(r).dump();
+    if (text.size() >= 2 && text.compare(text.size() - 2, 2, ".0") == 0)
+        text.resize(text.size() - 2);
+    return text;
+#else
     char buf[64];
     auto res = std::to_chars(buf, buf + sizeof(buf), r);
     return std::string(buf, static_cast<size_t>(res.ptr - buf));
+#endif
 }
 
 std::string hexU(uint64_t v, int digits) {

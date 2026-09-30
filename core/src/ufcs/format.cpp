@@ -96,7 +96,8 @@ std::string ufcsAscii(const uint8_t* bytes, size_t n) {
   for (size_t i = 0; i < n; i++) {
     uint8_t b = bytes[i];
     if (b == 0) break;
-    s += (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '·';
+    if (b >= 0x20 && b <= 0x7E) s += static_cast<char>(b);
+    else s += "·";
   }
   return s;
 }

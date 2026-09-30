@@ -45,7 +45,8 @@ std::string pdAscii(const std::vector<uint8_t>& bytes) {
   std::string s;
   for (uint8_t b : bytes) {
     if (b == 0) break;
-    s += (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '·';
+    if (b >= 0x20 && b <= 0x7E) s += static_cast<char>(b);
+    else s += "·";
   }
   // 按空白字符裁剪两端
   size_t a = 0, b = s.size();
@@ -56,8 +57,8 @@ std::string pdAscii(const std::vector<uint8_t>& bytes) {
 
 std::string pdCharPair(uint8_t lo, uint8_t hi) {
   if (!lo && !hi) return "";
-  auto c = [](uint8_t v) -> char {
-    return (v >= 0x20 && v <= 0x7E) ? static_cast<char>(v) : '·';
+  auto c = [](uint8_t v) -> std::string {
+    return (v >= 0x20 && v <= 0x7E) ? std::string(1, static_cast<char>(v)) : "·";
   };
   std::string s;
   s += c(lo);

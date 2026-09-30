@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PDScope
+Comment=Analyze USB PD and UFCS capture files
+Exec=@BINARY_NAME@ %U
+TryExec=@BINARY_NAME@
+Terminal=false
+Categories=Development;Utility;
+StartupWMClass=@APPLICATION_ID@

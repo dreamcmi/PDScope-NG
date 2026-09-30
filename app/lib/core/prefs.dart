@@ -35,10 +35,12 @@ class Prefs extends ChangeNotifier {
   Timer? _saveTimer;
 
   static File _defaultStorage() {
-    final base =
-        Platform.environment['APPDATA'] ??
-        Platform.environment['HOME'] ??
-        Directory.current.path;
+    final userHome = Platform.environment['HOME'] ?? Directory.current.path;
+    final base = Platform.isWindows
+        ? Platform.environment['APPDATA'] ?? userHome
+        : Platform.isMacOS
+        ? '$userHome/Library/Application Support'
+        : Platform.environment['XDG_CONFIG_HOME'] ?? '$userHome/.config';
     return File(
       '$base${Platform.pathSeparator}PDScope-NG${Platform.pathSeparator}prefs.json',
     );

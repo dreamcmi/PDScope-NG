@@ -1,10 +1,10 @@
 # Project-level configuration.
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.20)
 project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "pdscope_app")
+set(BINARY_NAME "PDScope")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "com.pdscope.pdscope_app")
@@ -50,12 +50,19 @@ endfunction()
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
+# Build the shared C ABI library as an isolated subproject. Its project-level
+# compiler and output settings then remain scoped to this child directory.
+set(PDSCOPE_NATIVE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+add_subdirectory("${PDSCOPE_NATIVE_SOURCE_DIR}"
+  "${CMAKE_CURRENT_BINARY_DIR}/pdscope-native" EXCLUDE_FROM_ALL)
+
 # System-level dependencies.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
+add_dependencies(${BINARY_NAME} pdscope)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
@@ -92,6 +99,15 @@ set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+
+install(TARGETS pdscope LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/PDScope.desktop.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/PDScope.desktop" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/PDScope.desktop"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

@@ -1,8 +1,7 @@
 # PDScope-NG 跨平台构建
 #
-# 桌面外壳（拖放 / 菜单 / 单实例转交 / 文件关联）目前只写了 Windows 一层
-# （app/windows/runner/shell.cpp）；macOS / Linux 目录还是 Flutter 模板占位，
-# 所以本工作流**只构建已适配好的 Windows x64**，其余平台等外壳补齐后再加。
+# Windows x64、Linux x64、macOS arm64 / x64：核心测试、Flutter 测试、
+# Release 桌面编译和便携包验证。macOS 产物使用临时签名，正式分发需另行公证。
 #
 # 产物清单（产物名 = PDScope-NG-<目标>-<版本段>）：
 #   · PDScope-NG-windows-x64-…-portable.zip  —— 桌面程序 + 命令行工具打成一个包。
@@ -32,10 +31,10 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
-  # 本机 Flutter 3.44.4 / stable。flutter-action 的 `flutter-version` 在 stable
+  # 与跨平台本机验证一致：Flutter 3.47.1 / stable。flutter-version 在 stable
   # channel 下只认**版本号**（去 release 列表里匹配），不认 commit/revision；
   # 只有 channel: master 才接受 git 引用。所以这里写版本号锁定。
-  FLUTTER_VERSION: '3.44.4'
+  FLUTTER_VERSION: '3.47.1'
 
 jobs:
   build:
@@ -49,13 +48,13 @@ jobs:
           - name: windows-x64
             os: windows-2025
             arch: x64
-            note: 'Windows 10/11 x64；桌面外壳唯一已适配的平台'
+            note: 'Windows 10/11 x64'
 
     steps:
       - uses: actions/checkout@v5
 
       # ── 装 Flutter ────────────────────────────────────────────
-      # 版本号锁 3.44.4（stable）；flutter-action 在 stable channel 下只认版本号。
+      # stable channel 使用版本号锁定。
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -96,21 +95,21 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
-      # ── 核心单测（不依赖抓包样本，样本不入库）──────────────────
+      # ── 核心单测 ──────────────────────────────────────────────
       - name: 核心单测
         shell: bash
         run: ./build/out/pdscope-tests.exe
 
       # ── Flutter 依赖与静态检查 ─────────────────────────────────
       # flutter test 需要先构建好核心（界面经 FFI 找 build/out/），上一步已完成。
-      # 测试只跑不依赖真实抓包样本的用例（样本在仓库外，按 .gitignore 排除）。
+      # rawdata 已入库，真实样本集成测试也在 CI 中执行。
       - name: Flutter 依赖与测试
         working-directory: app
         shell: bash
         run: |
           flutter pub get
           flutter analyze
-          flutter test
+          flutter test --concurrency=1
 
       # ── 构建桌面程序 ───────────────────────────────────────────
       # 此时 build/out/pdscope.dll 已就位，runner 的 POST_BUILD 会把它拷进 exe 目录。
@@ -186,10 +185,122 @@ jobs:
             echo "| 说明 | ${{ matrix.note }} |"
           } >> "$GITHUB_STEP_SUMMARY" || true
 
-  # 推 v* 标签时把全部产物汇总到一个草稿 Release：产物没签名，先让人看一眼再决定发不发
+  build-unix:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - name: macos-arm64
+            os: macos-15
+            platform: macos
+            arch: arm64
+          - name: macos-x64
+            os: macos-15-intel
+            platform: macos
+            arch: x64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Linux 编译与显示依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev liblzma-dev xvfb xauth dbus-x11
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          architecture: ${{ matrix.arch }}
+          cache: true
+
+      - name: 定产物版本段
+        run: |
+          ver="v$(sed -n 's/^version: \([0-9.]*\).*/\1/p' app/pubspec.yaml)"
+          suffix=""
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            suffix="_${GITHUB_SHA:0:8}_$(date -u +%Y%m%d)"
+          fi
+          echo "VERSEG=${ver}${suffix}" >> "$GITHUB_ENV"
+          echo "PDSCOPE_LIB_DIR=$GITHUB_WORKSPACE/build/native/out" >> "$GITHUB_ENV"
+
+      - name: 构建核心并运行单测
+        run: |
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native --parallel 3
+          ctest --test-dir build/native --output-on-failure
+
+      - name: Flutter 依赖与测试
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test --concurrency=1
+
+      - name: 构建桌面程序
+        working-directory: app
+        run: flutter build ${{ matrix.platform }} --release
+
+      - name: Linux 发行包运行检查
+        if: runner.os == 'Linux'
+        run: |
+          bundle="app/build/linux/x64/release/bundle"
+          dbus-run-session -- xvfb-run -a python3 tools/smoke-desktop.py \
+            --bundle "$bundle" --sample rawdata/CTK10UL_X300U_UFCS.ufcsStream
+
+      - name: macOS 发行包运行检查
+        if: runner.os == 'macOS'
+        run: |
+          codesign --verify --deep --strict app/build/macos/Build/Products/Release/PDScope.app
+          python3 tools/smoke-desktop.py \
+            --bundle app/build/macos/Build/Products/Release/PDScope.app \
+            --sample rawdata/CTK10UL_X300U_UFCS.ufcsStream
+
+      - name: 打包与校验和
+        run: |
+          bundle="PDScope-NG-${{ matrix.name }}-$VERSEG"
+          mkdir -p "$bundle"
+          if [[ "${{ matrix.platform }}" == macos ]]; then
+            cp -R app/build/macos/Build/Products/Release/PDScope.app "$bundle/"
+            cp build/native/out/pdscope-cli "$bundle/"
+            cp LICENSE THIRD_PARTY_NOTICES.md "$bundle/"
+            ditto -c -k --sequesterRsrc --keepParent "$bundle" "$bundle-portable.zip"
+            shasum -a 256 "$bundle-portable.zip" > "$bundle-portable.zip.sha256"
+          else
+            cp -a app/build/linux/x64/release/bundle/. "$bundle/"
+            cp build/native/out/pdscope-cli LICENSE THIRD_PARTY_NOTICES.md "$bundle/"
+            tar -czf "$bundle-portable.tar.gz" "$bundle"
+            sha256sum "$bundle-portable.tar.gz" > "$bundle-portable.tar.gz.sha256"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          retention-days: 30
+          path: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}
+          archive: false
+
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          retention-days: 30
+          path: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}.sha256
+          archive: false
+
+  # 推 v* 标签时把全部产物汇总到一个草稿 Release。
   release:
     name: 汇总 Release
-    needs: build
+    needs: [build, build-unix]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     steps:

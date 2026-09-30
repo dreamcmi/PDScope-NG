@@ -22,7 +22,7 @@ core/         C++17 解析内核 + C ABI 实现        → pdscope.dll / .so / .
   src/abi.cpp                 ← C ABI 的唯一实现
   src/session.cpp             ← 统一会话/报文/统计模型
 cli/          独立命令行（直接调 C++，不经 C ABI）→ pdscope-cli
-app/          Flutter 桌面界面（Dart FFI）       → PDScope（Windows 桌面程序）
+app/          Flutter 桌面界面（Dart FFI）       → PDScope（Windows / Linux / macOS）
 tests/        核心单测（含 C ABI 契约测试）
 doc/abi.md    C ABI 说明：约定、JSON 结构与二进制布局
 doc/desktop.md 桌面外壳：拖放、文件关联、菜单这一层怎么接
@@ -36,8 +36,9 @@ artifacts/    自检产出的截图（不参与打包）
 
 ## 外壳
 
-桌面程序除了界面本身，还接了一层**跟操作系统打交道**的代码（Windows：
-`app/windows/runner/`）：拖放、命令行与文件关联、第二个实例转交、中文菜单。
+桌面程序通过 Windows `app/windows/runner/`、Linux `app/linux/runner/`、
+macOS `app/macos/Runner/` 接入拖放、命令行与文件打开事件、中文菜单。
+Windows 和 Linux 转交第二个实例的文件；macOS 通过系统的应用打开事件复用窗口。
 它交给界面的**只有路径**，格式一律由核心判定。
 
 ## 构建
@@ -64,9 +65,41 @@ flutter test          # 需要先构建好核心（界面经 FFI 找 build/out/�
 flutter build windows --release
 ```
 
-界面在运行期自己找动态库：先看环境变量 `PDSCOPE_LIB_DIR`，再看可执行文件同目录
-（打包后就在这里），最后**逐级向上找到含 `CMakeLists.txt` 的仓库根**、进 `build/out`。
-所以开发时不必手动拷贝。
+### Linux 与 macOS
+
+Linux 需要 Clang、CMake ≥ 3.20、Ninja、pkg-config、GTK 3 和 liblzma 开发库；
+macOS 需要 Xcode、CMake 和 Flutter；使用 Flutter 3.47.1，macOS 部署目标为 12.0。
+Linux 和 macOS 的 Flutter 构建会同时构建并打包核心库：
+
+```bash
+cd app
+flutter pub get
+flutter build linux --release    # 在 Linux 上执行
+flutter build macos --release    # 在 macOS 上执行
+```
+
+Linux 产物是 `app/build/linux/x64/release/bundle/`（包括 `PDScope`、`lib/` 和 `data/`），
+macOS 产物是 `app/build/macos/Build/Products/Release/PDScope.app`。
+两者必须按完整目录分发。macOS 使用临时签名；面向公众分发时还需开发者签名与公证。
+
+macOS 请在未被文件同步服务管理的目录中构建和解压运行。部分同步目录（例如同步中的
+Desktop）会持续给 `.app` / `.framework` 写入 Finder 元数据，造成
+`resource fork, Finder information, or similar detritus not allowed` 签名错误；
+遇到这种情况，应将源码移到普通本地目录重新构建。新增依赖缓存可放在仓库忽略的
+`.local/` 中，例如先设置 `export PUB_CACHE="$PWD/.local/pub-cache"` 再进入 `app/`。
+
+核心、CLI 与测试也可单独构建，使用不同目录避免复用另一平台的 CMake 缓存：
+
+```bash
+cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/native --parallel 3
+ctest --test-dir build/native --output-on-failure
+cd app
+PDSCOPE_LIB_DIR="$PWD/../build/native/out" flutter test
+```
+
+动态库搜索依次为 `PDSCOPE_LIB_DIR`、可执行文件目录、Linux 的 `lib/` 或 macOS 的
+`Contents/Frameworks/`，最后查找仓库的开发构建输出。macOS 核心会随 Xcode 的目标架构构建并签名。
 
 ## 打开抓包的四种方式
 
@@ -111,7 +144,7 @@ python tools/smoke-shell.py          # 真窗口端到端：启动参数、单�
 几条值得知道的口径：
 
 - **「跳过」不是「通过」**。缺样例文件的用例会记为跳过并单独报出来 —— 那些断言一条都没验证过。
-- **私有抓包不入库**。依赖真实样本的用例在样本缺失时跳过；合成夹具则人人可跑。
+- `rawdata/` 中的测试抓包已入库；缺少额外旧版私有样本的用例仍按实际情况报告跳过。
 - 测试会优先找旧版命名的样本，缺失时使用本地 `rawdata/` 中对应的抓包；`csv-diff.mjs` 默认扫描 `rawdata/`。
 - 界面冒烟用 widget test 顶替开窗口：`flutter_tester` 是个真的 Dart VM（FFI、isolate
   都在），整个控件树照常布局与绘制，只是不出窗口，所以在 CI 上也能跑。
@@ -119,6 +152,14 @@ python tools/smoke-shell.py          # 真窗口端到端：启动参数、单�
   之所以读得到，是因为界面把这些状态回报给了外壳 —— 界面状态因此变成可断言的事实，
   不必再靠人看。「拖放」是唯一仍需人跑的一条（`HDROP` 跨进程造不出来），
   但它与命令行共用同一个出口。
+
+Linux/macOS 发行包检查使用 `tools/smoke-desktop.py --bundle <完整包路径> --sample <抓包路径>`：
+验证随包核心的 ABI 和真实样本解码，再从仓库外启动 GUI，确认完成首帧绘制，检测启动错误及提前退出。
+Linux 无显示服务器时可用 `dbus-run-session -- xvfb-run -a python3 tools/smoke-desktop.py ...`。
+该检查不代替拖放、菜单和布局的完整交互验收。
+
+GitHub Actions 同时构建 Windows x64、Linux x64、macOS arm64 和 macOS x64，
+执行核心测试、Flutter 静态检查/测试和 Unix 发行包运行检查，分别上传便携包与 SHA256 校验和。
 
 ## 许可
 

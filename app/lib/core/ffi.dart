@@ -64,12 +64,24 @@ final class PdscopeProgress extends Struct {
 /* ── 函数签名 ───────────────────────────────────────────────────────── */
 
 typedef _OpenBytesNative =
-    Pointer<Void> Function(Pointer<Uint8>, IntPtr, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
+    Pointer<Void> Function(
+      Pointer<Uint8>,
+      IntPtr,
+      Pointer<Utf8>,
+      Pointer<Pointer<Utf8>>,
+    );
 typedef _OpenBytesDart =
-    Pointer<Void> Function(Pointer<Uint8>, int, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
+    Pointer<Void> Function(
+      Pointer<Uint8>,
+      int,
+      Pointer<Utf8>,
+      Pointer<Pointer<Utf8>>,
+    );
 
-typedef _OpenFileNative = Pointer<Void> Function(Pointer<Utf8>, Pointer<Pointer<Utf8>>);
-typedef _OpenFileDart = Pointer<Void> Function(Pointer<Utf8>, Pointer<Pointer<Utf8>>);
+typedef _OpenFileNative =
+    Pointer<Void> Function(Pointer<Utf8>, Pointer<Pointer<Utf8>>);
+typedef _OpenFileDart =
+    Pointer<Void> Function(Pointer<Utf8>, Pointer<Pointer<Utf8>>);
 
 typedef _CloseNative = Void Function(Pointer<Void>);
 typedef _CloseDart = void Function(Pointer<Void>);
@@ -78,26 +90,39 @@ typedef _BufOutNative = Int32 Function(Pointer<Void>, Pointer<PdscopeBuf>);
 typedef _BufOutDart = int Function(Pointer<Void>, Pointer<PdscopeBuf>);
 
 typedef _DecodeNative =
-    Int32 Function(Pointer<Void>, Pointer<PdscopeDecodeOpts>, Pointer<PdscopeBuf>);
+    Int32 Function(
+      Pointer<Void>,
+      Pointer<PdscopeDecodeOpts>,
+      Pointer<PdscopeBuf>,
+    );
 typedef _DecodeDart =
-    int Function(Pointer<Void>, Pointer<PdscopeDecodeOpts>, Pointer<PdscopeBuf>);
+    int Function(
+      Pointer<Void>,
+      Pointer<PdscopeDecodeOpts>,
+      Pointer<PdscopeBuf>,
+    );
 
 typedef _CancelNative = Void Function(Pointer<Void>);
 typedef _CancelDart = void Function(Pointer<Void>);
 
-typedef _ProgressNative = Int32 Function(Pointer<Void>, Pointer<PdscopeProgress>);
+typedef _ProgressNative =
+    Int32 Function(Pointer<Void>, Pointer<PdscopeProgress>);
 typedef _ProgressDart = int Function(Pointer<Void>, Pointer<PdscopeProgress>);
 
-typedef _SetFilterNative = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
-typedef _SetFilterDart = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
+typedef _SetFilterNative =
+    Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
+typedef _SetFilterDart =
+    int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
 
 typedef _CountNative = Int32 Function(Pointer<Void>, Pointer<Uint64>);
 typedef _CountDart = int Function(Pointer<Void>, Pointer<Uint64>);
 
-typedef _PageNative = Int32 Function(Pointer<Void>, Uint64, Uint32, Pointer<PdscopeBuf>);
+typedef _PageNative =
+    Int32 Function(Pointer<Void>, Uint64, Uint32, Pointer<PdscopeBuf>);
 typedef _PageDart = int Function(Pointer<Void>, int, int, Pointer<PdscopeBuf>);
 
-typedef _DetailNative = Int32 Function(Pointer<Void>, Uint64, Pointer<PdscopeBuf>);
+typedef _DetailNative =
+    Int32 Function(Pointer<Void>, Uint64, Pointer<PdscopeBuf>);
 typedef _DetailDart = int Function(Pointer<Void>, int, Pointer<PdscopeBuf>);
 
 typedef _BufFreeNative = Void Function(Pointer<PdscopeBuf>);
@@ -107,8 +132,16 @@ typedef _StrFreeNative = Void Function(Pointer<Utf8>);
 typedef _StrFreeDart = void Function(Pointer<Utf8>);
 
 typedef _WaveNative =
-    Int32 Function(Pointer<Void>, Int32, Uint64, Uint64, Uint32, Pointer<PdscopeBuf>);
-typedef _WaveDart = int Function(Pointer<Void>, int, int, int, int, Pointer<PdscopeBuf>);
+    Int32 Function(
+      Pointer<Void>,
+      Int32,
+      Uint64,
+      Uint64,
+      Uint32,
+      Pointer<PdscopeBuf>,
+    );
+typedef _WaveDart =
+    int Function(Pointer<Void>, int, int, int, int, Pointer<PdscopeBuf>);
 
 typedef _BusNative = Int32 Function(Pointer<Void>, Uint32, Pointer<PdscopeBuf>);
 typedef _BusDart = int Function(Pointer<Void>, int, Pointer<PdscopeBuf>);
@@ -116,8 +149,18 @@ typedef _BusDart = int Function(Pointer<Void>, int, Pointer<PdscopeBuf>);
 typedef _MarksNative = Int32 Function(Pointer<Void>, Pointer<PdscopeBuf>);
 typedef _MarksDart = int Function(Pointer<Void>, Pointer<PdscopeBuf>);
 
-typedef _ExportNative = Int32 Function(Pointer<Void>, Pointer<PdscopeExportOpts>, Pointer<PdscopeBuf>);
-typedef _ExportDart = int Function(Pointer<Void>, Pointer<PdscopeExportOpts>, Pointer<PdscopeBuf>);
+typedef _ExportNative =
+    Int32 Function(
+      Pointer<Void>,
+      Pointer<PdscopeExportOpts>,
+      Pointer<PdscopeBuf>,
+    );
+typedef _ExportDart =
+    int Function(
+      Pointer<Void>,
+      Pointer<PdscopeExportOpts>,
+      Pointer<PdscopeBuf>,
+    );
 
 typedef _DefNameNative = Int32 Function(Pointer<Void>, Pointer<Pointer<Utf8>>);
 typedef _DefNameDart = int Function(Pointer<Void>, Pointer<Pointer<Utf8>>);
@@ -160,30 +203,68 @@ class PdscopeException implements Exception {
 /// 动态库句柄 + 全部函数指针。
 class PdscopeBindings {
   PdscopeBindings._(this._lib, this.libraryPath) {
-    abiVersion = _lib.lookupFunction<_U32Native, _U32Dart>('pdscope_abi_version');
+    abiVersion = _lib.lookupFunction<_U32Native, _U32Dart>(
+      'pdscope_abi_version',
+    );
     version = _lib.lookupFunction<_CStrNative, _CStrDart>('pdscope_version');
-    statusName = _lib.lookupFunction<_StatusNameNative, _StatusNameDart>('pdscope_status_name');
-    bufFree = _lib.lookupFunction<_BufFreeNative, _BufFreeDart>('pdscope_buf_free');
-    strFree = _lib.lookupFunction<_StrFreeNative, _StrFreeDart>('pdscope_str_free');
-    openBytes = _lib.lookupFunction<_OpenBytesNative, _OpenBytesDart>('pdscope_open_bytes');
-    openFile = _lib.lookupFunction<_OpenFileNative, _OpenFileDart>('pdscope_open_file');
+    statusName = _lib.lookupFunction<_StatusNameNative, _StatusNameDart>(
+      'pdscope_status_name',
+    );
+    bufFree = _lib.lookupFunction<_BufFreeNative, _BufFreeDart>(
+      'pdscope_buf_free',
+    );
+    strFree = _lib.lookupFunction<_StrFreeNative, _StrFreeDart>(
+      'pdscope_str_free',
+    );
+    openBytes = _lib.lookupFunction<_OpenBytesNative, _OpenBytesDart>(
+      'pdscope_open_bytes',
+    );
+    openFile = _lib.lookupFunction<_OpenFileNative, _OpenFileDart>(
+      'pdscope_open_file',
+    );
     close = _lib.lookupFunction<_CloseNative, _CloseDart>('pdscope_close');
-    metadata = _lib.lookupFunction<_BufOutNative, _BufOutDart>('pdscope_metadata');
+    metadata = _lib.lookupFunction<_BufOutNative, _BufOutDart>(
+      'pdscope_metadata',
+    );
     decode = _lib.lookupFunction<_DecodeNative, _DecodeDart>('pdscope_decode');
     cancel = _lib.lookupFunction<_CancelNative, _CancelDart>('pdscope_cancel');
-    getProgress = _lib.lookupFunction<_ProgressNative, _ProgressDart>('pdscope_get_progress');
-    setFilter = _lib.lookupFunction<_SetFilterNative, _SetFilterDart>('pdscope_set_filter');
-    viewCount = _lib.lookupFunction<_CountNative, _CountDart>('pdscope_view_count');
-    packetCount = _lib.lookupFunction<_CountNative, _CountDart>('pdscope_packet_count');
-    queryPage = _lib.lookupFunction<_PageNative, _PageDart>('pdscope_query_page');
-    packetDetail = _lib.lookupFunction<_DetailNative, _DetailDart>('pdscope_packet_detail');
-    waveformRange = _lib.lookupFunction<_WaveNative, _WaveDart>('pdscope_waveform_range');
+    getProgress = _lib.lookupFunction<_ProgressNative, _ProgressDart>(
+      'pdscope_get_progress',
+    );
+    setFilter = _lib.lookupFunction<_SetFilterNative, _SetFilterDart>(
+      'pdscope_set_filter',
+    );
+    viewCount = _lib.lookupFunction<_CountNative, _CountDart>(
+      'pdscope_view_count',
+    );
+    packetCount = _lib.lookupFunction<_CountNative, _CountDart>(
+      'pdscope_packet_count',
+    );
+    queryPage = _lib.lookupFunction<_PageNative, _PageDart>(
+      'pdscope_query_page',
+    );
+    packetDetail = _lib.lookupFunction<_DetailNative, _DetailDart>(
+      'pdscope_packet_detail',
+    );
+    waveformRange = _lib.lookupFunction<_WaveNative, _WaveDart>(
+      'pdscope_waveform_range',
+    );
     busSeries = _lib.lookupFunction<_BusNative, _BusDart>('pdscope_bus_series');
-    typeCounts = _lib.lookupFunction<_BufOutNative, _BufOutDart>('pdscope_type_counts');
-    packetMarks = _lib.lookupFunction<_MarksNative, _MarksDart>('pdscope_packet_marks');
-    exportCsv = _lib.lookupFunction<_ExportNative, _ExportDart>('pdscope_export_csv');
-    exportJson = _lib.lookupFunction<_ExportNative, _ExportDart>('pdscope_export_json');
-    defaultCsvName = _lib.lookupFunction<_DefNameNative, _DefNameDart>('pdscope_default_csv_name');
+    typeCounts = _lib.lookupFunction<_BufOutNative, _BufOutDart>(
+      'pdscope_type_counts',
+    );
+    packetMarks = _lib.lookupFunction<_MarksNative, _MarksDart>(
+      'pdscope_packet_marks',
+    );
+    exportCsv = _lib.lookupFunction<_ExportNative, _ExportDart>(
+      'pdscope_export_csv',
+    );
+    exportJson = _lib.lookupFunction<_ExportNative, _ExportDart>(
+      'pdscope_export_json',
+    );
+    defaultCsvName = _lib.lookupFunction<_DefNameNative, _DefNameDart>(
+      'pdscope_default_csv_name',
+    );
   }
 
   final DynamicLibrary _lib;
@@ -236,7 +317,7 @@ class PdscopeBindings {
     }
     throw PdscopeException(
       '找不到核心动态库 $fileName。已尝试：\n${tried.map((t) => '  · $t').join('\n')}\n'
-      '开发时先构建核心（cmake --build build），发行版应把库放在可执行文件同目录。',
+      '开发时先构建核心或设置 PDSCOPE_LIB_DIR，发行版应携带对应平台的核心库。',
       Status.io,
     );
   }
@@ -254,6 +335,11 @@ class PdscopeBindings {
 
     final exeDir = File(Platform.resolvedExecutable).parent.path;
     out.add(exeDir);
+    if (Platform.isMacOS) {
+      out.add('${File(exeDir).parent.path}/Frameworks');
+    } else if (Platform.isLinux) {
+      out.add('$exeDir/lib');
+    }
     _addRepoOut(out, exeDir);
     _addRepoOut(out, Directory.current.path);
     return out;
@@ -264,9 +350,17 @@ class PdscopeBindings {
     final sep = Platform.pathSeparator;
     var dir = Directory(start);
     for (var i = 0; i < 10; i++) {
-      if (File('${dir.path}${sep}CMakeLists.txt').existsSync()) {
-        final candidate = '${dir.path}${sep}build${sep}out';
-        if (!out.contains(candidate)) out.add(candidate);
+      if (File(
+        '${dir.path}${sep}core${sep}include${sep}pdscope${sep}pdscope.h',
+      ).existsSync()) {
+        for (final relative in [
+          'build${sep}out',
+          if (Platform.isMacOS) 'build${sep}macos-native${sep}out',
+          if (Platform.isLinux) 'build${sep}linux-native${sep}out',
+        ]) {
+          final candidate = '${dir.path}$sep$relative';
+          if (!out.contains(candidate)) out.add(candidate);
+        }
         return;
       }
       final parent = dir.parent;
@@ -285,7 +379,8 @@ class PdscopeBindings {
     final buf = calloc<PdscopeBuf>();
     try {
       final st = call(buf);
-      if (st != Status.ok) throw PdscopeException('调用失败（${statusName(st)}）', st);
+      if (st != Status.ok)
+        throw PdscopeException('调用失败（${statusName(st)}）', st);
       final ref = buf.ref;
       if (ref.data == nullptr || ref.len == 0) return '';
       return utf8.decode(ref.data.asTypedList(ref.len));
@@ -300,7 +395,8 @@ class PdscopeBindings {
     final buf = calloc<PdscopeBuf>();
     try {
       final st = call(buf);
-      if (st != Status.ok) throw PdscopeException('调用失败（${statusName(st)}）', st);
+      if (st != Status.ok)
+        throw PdscopeException('调用失败（${statusName(st)}）', st);
       final ref = buf.ref;
       if (ref.data == nullptr || ref.len == 0) return Uint8List(0);
       return Uint8List.fromList(ref.data.asTypedList(ref.len));

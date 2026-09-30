@@ -3,6 +3,8 @@
 // 启动顺序：先把引擎（工作 isolate + 动态库）建起来、再外壳接上，最后交给界面。
 // 引擎建不起来（找不到 pdscope.dll / 路径不对）时**不能**一路裸崩 ——
 // 那时给一张能读的说明页，比一个空白窗口有用。
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'core/engine.dart';
@@ -28,9 +30,14 @@ Future<void> main() async {
     await ShellBridge.attach(ws);
 
     runApp(PdScopeApp(workspace: ws));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      stderr.writeln('PDScope ready');
+    });
   } on PdscopeException catch (e) {
+    stderr.writeln('PDScope startup failed: ${e.message}');
     runApp(_EngineFailureApp(message: e.message));
   } catch (e) {
+    stderr.writeln('PDScope startup failed: $e');
     runApp(_EngineFailureApp(message: '$e'));
   }
 }

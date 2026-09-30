@@ -12,8 +12,10 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+		<key>CFBundleName</key>
+		<string>$(PRODUCT_NAME)</string>
+		<key>CFBundleDisplayName</key>
+		<string>PDScope</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -26,7 +28,56 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
-</dict>
+		<key>NSPrincipalClass</key>
+		<string>NSApplication</string>
+		<key>LSMultipleInstancesProhibited</key>
+		<true/>
+		<key>CFBundleDocumentTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeName</key>
+				<string>PDScope capture</string>
+				<key>CFBundleTypeRole</key>
+				<string>Viewer</string>
+				<key>LSHandlerRank</key>
+				<string>Alternate</string>
+				<key>LSItemContentTypes</key>
+				<array>
+					<string>com.pdscope.capture</string>
+				</array>
+				<key>CFBundleTypeExtensions</key>
+				<array>
+					<string>atkcc</string>
+					<string>sqlite</string>
+					<string>db</string>
+					<string>pdstream</string>
+					<string>ufcsstream</string>
+				</array>
+			</dict>
+		</array>
+		<key>UTExportedTypeDeclarations</key>
+		<array>
+			<dict>
+				<key>UTTypeIdentifier</key>
+				<string>com.pdscope.capture</string>
+				<key>UTTypeDescription</key>
+				<string>PDScope capture</string>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
+				</array>
+				<key>UTTypeTagSpecification</key>
+				<dict>
+					<key>public.filename-extension</key>
+					<array>
+						<string>atkcc</string>
+						<string>sqlite</string>
+						<string>db</string>
+						<string>pdstream</string>
+						<string>ufcsstream</string>
+					</array>
+				</dict>
+			</dict>
+		</array>
+	</dict>
 </plist>
