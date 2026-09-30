@@ -11,7 +11,8 @@ USB Power Delivery / UFCS 抓包分析工具。**解析内核是 C++17，界面�
 | 正点原子 ATK-C | `.atkcc` | 通道电平采样 → BMC → 4B5B → PD 报文 |
 | POWER-Z 分析仪 | `.sqlite` + `pd_table` | 报文已解到逻辑字节，直接走语义层 |
 | POWER-Z 分析仪 | `.sqlite` + `ufcs_table` | UFCS 帧、方向、CRC-8 与数据字段 |
-| 记录流 | `.pdStream` | 只有报文，没有 ADC 波形 |
+| 记录流 | `.pdStream` | PD 报文，无 ADC 波形 |
+| 记录流 | `.ufcsStream` | UFCS 帧与事件，无 ADC 波形 |
 
 ## 目录
 
@@ -25,6 +26,7 @@ app/          Flutter 桌面界面（Dart FFI）       → PDScope（Windows 桌
 tests/        核心单测（含 C ABI 契约测试）
 doc/abi.md    C ABI 说明：约定、JSON 结构与二进制布局
 doc/desktop.md 桌面外壳：拖放、文件关联、菜单这一层怎么接
+doc/migration-audit.md  旧版迁移对照、样本验证结果与尚存差异
 third_party/  SQLite / zlib / nlohmann-json（见 THIRD_PARTY_NOTICES.md）
 _dl/          依赖的原始归档（用于核对校验值，不入发行包）
 tools/        msvc-env.sh（Git Bash 里搭 MSVC 环境）、smoke-shell.py（外壳端到端探针）、
@@ -110,6 +112,7 @@ python tools/smoke-shell.py          # 真窗口端到端：启动参数、单�
 
 - **「跳过」不是「通过」**。缺样例文件的用例会记为跳过并单独报出来 —— 那些断言一条都没验证过。
 - **私有抓包不入库**。依赖真实样本的用例在样本缺失时跳过；合成夹具则人人可跑。
+- 测试会优先找旧版命名的样本，缺失时使用本地 `rawdata/` 中对应的抓包；`csv-diff.mjs` 默认扫描 `rawdata/`。
 - 界面冒烟用 widget test 顶替开窗口：`flutter_tester` 是个真的 Dart VM（FFI、isolate
   都在），整个控件树照常布局与绘制，只是不出窗口，所以在 CI 上也能跑。
 - `smoke-shell.py` 走的是**真进程 + 真窗口**：它从外部读窗口标题与菜单勾选/置灰。

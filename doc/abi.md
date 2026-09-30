@@ -132,8 +132,8 @@ ANSI 字节 —— 两边错得刚好对上。真正的调用方（Dart FFI、�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `name` | string | 显示名（来自 `name_hint` 或路径的 basename） |
-| `source` | string | 来源短名（如 `powerz` / `atkcc` / `pdstream`） |
-| `container` | string | 容器种类（如 `sqlite` / `atkcc` / `pdstream`） |
+| `source` | string | 来源短名（如 `powerz` / `atkcc` / `pdstream` / `ufcsstream`） |
+| `container` | string | 容器种类（如 `sqlite` / `atkcc` / `pdstream` / `ufcsstream`） |
 | `protocol` | string | `"USB PD"` 或 `"UFCS"` |
 | `fileBytes` | number | 文件字节数 |
 | `decoded` | bool | 是否已解码 |
