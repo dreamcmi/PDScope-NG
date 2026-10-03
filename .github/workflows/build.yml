@@ -392,25 +392,58 @@ jobs:
           retention-days: 30
           path: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}.sha256
 
-  # 全部平台上传完毕后核对草稿 Release 的附件：该有的都在，且没有非预期的文件。
+  # 全部平台上传完毕后清理并核对草稿 Release 的附件。
   release:
     name: 核对 Release 附件
     needs: [build, build-unix]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     steps:
-      - name: 核对草稿 Release 的附件
+      - name: 清理并核对草稿 Release 的附件
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
+          repo="$GITHUB_REPOSITORY"
 
-          assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)"
+          # 附件白名单：Release 上只该有发行包本身和它的 .sha256。
+          # ⚠ 以后新增产物类型（换扩展名、加新的包）时，这里要同步改。
+          allow='^PDScope-NG-[A-Za-z0-9._-]+-portable\.(zip|tar\.gz)(\.sha256)?$'
+
+          state="$(gh api "repos/$repo/releases/tags/$tag" --jq '.draft' 2>/dev/null || echo missing)"
+          assets="$(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' | sort)"
+
           if [[ -z "$assets" ]]; then
             echo "::error::草稿 Release $tag 里没有任何附件"
             exit 1
           fi
+
+          # 草稿是 CI 自己的产物：不在白名单里的附件（例如按 basename 误传的
+          # .app 目录树内部文件 App / Info.plist / LICENSE / Resources）直接删掉，
+          # 让草稿收敛到正确状态。已发布的 Release 一个都不删，只报错交人工处理。
+          junk="$(printf '%s\n' "$assets" | grep -Ev "$allow" || true)"
+          if [[ -n "$junk" ]]; then
+            printf '非预期附件：\n%s\n' "$junk"
+            if [[ "$state" != "true" ]]; then
+              echo "::error::Release $tag 已发布，却挂着非预期附件；确认无用后手动删："
+              while IFS= read -r name; do
+                if [[ -n "$name" ]]; then
+                  echo "  gh release delete-asset $tag '$name' --yes"
+                fi
+              done <<<"$junk"
+              exit 1
+            fi
+            while IFS= read -r name; do
+              if [[ -z "$name" ]]; then
+                continue
+              fi
+              echo "删除非预期附件：$name"
+              gh release delete-asset "$tag" "$name" --yes --repo "$repo"
+            done <<<"$junk"
+            assets="$(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' | sort)"
+          fi
+
           printf '共 %d 个附件\n' "$(printf '%s\n' "$assets" | wc -l)"
           printf '%s\n' "$assets"
 
@@ -427,16 +460,8 @@ jobs:
             fi
           done <<<"$assets"
 
-          # 非预期附件（例如上一轮失败留下的 .app 内部文件）不该挂在这里
-          while IFS= read -r name; do
-            if [[ ! "$name" =~ ^PDScope-NG-[A-Za-z0-9._-]+-portable\.(zip|tar\.gz)(\.sha256)?$ ]]; then
-              echo "::error::非预期附件：$name"
-              fail=1
-            fi
-          done <<<"$assets"
-
           if [[ "$fail" != "0" ]]; then
             exit 1
           fi
 
-          echo "附件齐全，草稿 $tag 可以发布了"
+          echo "附件齐全：$tag（草稿，可以发布了）"
