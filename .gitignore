@@ -5,6 +5,10 @@
 # 自检截图（由 CI 从深层的 artifacts/ 直传，不放仓库、不进发行包）
 /artifacts/
 
+# 一键构建（tools/build-all.py）归置出的发行目录：里面是 app 的整份拷贝 +
+# 核心库 + 许可声明，几十 MB，属于产物不属于源码。
+/dist/
+
 # 下载缓存：third_party 里已经是解压好的可构建源码，原始 zip/tar.gz 不入库
 /_dl/
 /.local/

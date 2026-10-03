@@ -27,7 +27,9 @@ _pdscope_need() {  # 目录必须存在，否则给出人说人话的报错
 }
 
 # ── 探测 VS 安装位置 ─────────────────────────────────────────────────
-if [ -n "$PDSCOPE_VS_ROOT" ]; then
+# ⚠ 一律写成 ${VAR:-}：这个脚本会被 build-all.sh 那种开着 `set -u` 的 shell source，
+#   直接引用未赋值的变量会让**整个构建**在那一行中断，报错却指向这里的一个变量名。
+if [ -n "${PDSCOPE_VS_ROOT:-}" ]; then
     _vs="$PDSCOPE_VS_ROOT"
 else
     _vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
@@ -36,25 +38,50 @@ else
                -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
                -property installationPath 2>/dev/null | tr -d '\r')"
     fi
-    [ -z "$_vs" ] && _vs="C:/Program Files/Microsoft Visual Studio/2022/Community"
+    [ -z "${_vs:-}" ] && _vs="C:/Program Files/Microsoft Visual Studio/2022/Community"
 fi
 # Git Bash can open C:/... paths, but PATH entries must use its /c/... form.
 # vswhere reports a Windows path, and user overrides may do the same.
 if command -v cygpath >/dev/null 2>&1; then _vs="$(cygpath -u "$_vs")"; fi
 _pdscope_need "$_vs" "Visual Studio 安装目录" || return 1
 
-# ── MSVC 工具集（取版本号最大的那份）────────────────────────────────
+# ── MSVC 工具集（挑版本号最大、且**真的有 cl.exe** 的那份）──────────
+# ⚠ 不能只按版本号取最大：Visual Studio 更新有时会留下一个只有 lib/crt、
+#   没有 bin 的残缺目录，取最大就会指向它，而报错现场看着像「编译器没装」。
 _msvc_parent="$_vs/VC/Tools/MSVC"
 _pdscope_need "$_msvc_parent" "MSVC 工具集目录" || return 1
-_msvc_ver="$(ls "$_msvc_parent" 2>/dev/null | sort -V | tail -1)"
-_pdscope_need "$_msvc_parent/$_msvc_ver" "MSVC 工具集（没找到任何版本）" || return 1
+_msvc_ver=""
+for _v in $(ls "$_msvc_parent" 2>/dev/null | sort -Vr); do
+    if [ -x "$_msvc_parent/$_v/bin/Hostx64/x64/cl.exe" ]; then
+        _msvc_ver="$_v"
+        break
+    fi
+done
+if [ -z "$_msvc_ver" ]; then
+    echo "[msvc-env] $_msvc_parent 下没有任何一份工具集含 bin/Hostx64/x64/cl.exe" >&2
+    echo "[msvc-env] 装的可能是残缺的工具集；用 VS Installer 修一下「使用 C++ 的桌面开发」" >&2
+    return 1
+fi
 _msvc="$_msvc_parent/$_msvc_ver"
 
-# ── Windows SDK（同样取最大的那份）───────────────────────────────────
+# ── Windows SDK（同样挑真的有头文件 / 有库的那份）────────────────────
 _sdk_root="/c/Program Files (x86)/Windows Kits/10"
 _pdscope_need "$_sdk_root/Include" "Windows SDK（Include 目录）" || return 1
-_sdk_ver="$(ls "$_sdk_root/Include" 2>/dev/null | sort -V | tail -1)"
-_pdscope_need "$_sdk_root/Include/$_sdk_ver" "Windows SDK（没找到任何版本）" || return 1
+_sdk_ver=""
+for _v in $(ls "$_sdk_root/Include" 2>/dev/null | sort -Vr); do
+    if [ -f "$_sdk_root/Include/$_v/ucrt/stdio.h" ]; then
+        _sdk_ver="$_v"
+        break
+    fi
+done
+if [ -z "$_sdk_ver" ]; then
+    echo "[msvc-env] $_sdk_root/Include 下没有含 ucrt/stdio.h 的版本" >&2
+    return 1
+fi
+if [ ! -f "$_sdk_root/Lib/$_sdk_ver/um/x64/kernel32.lib" ]; then
+    echo "[msvc-env] Windows SDK $_sdk_ver 缺 Lib/um/x64/kernel32.lib" >&2
+    return 1
+fi
 _sdk="$_sdk_root/Include/$_sdk_ver"
 _sdk_lib="$_sdk_root/Lib/$_sdk_ver"
 

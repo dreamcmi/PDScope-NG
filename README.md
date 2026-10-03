@@ -29,9 +29,11 @@ doc/desktop.md 桌面外壳：拖放、文件关联、菜单这一层怎么接
 doc/migration-audit.md  旧版迁移对照、样本验证结果与尚存差异
 third_party/  SQLite / zlib / nlohmann-json（见 THIRD_PARTY_NOTICES.md）
 _dl/          依赖的原始归档（用于核对校验值，不入发行包）
-tools/        msvc-env.sh（Git Bash 里搭 MSVC 环境）、smoke-shell.py（外壳端到端探针）、
-              capture-window.py（按标题抓窗口截图）、csv-diff.mjs
-artifacts/    自检产出的截图（不参与打包）
+tools/        build-all.sh / build-all.ps1（一键构建 + 归置）、msvc-env.sh（搭 MSVC 环境）、
+              smoke-shell.py（外壳端到端探针）、capture-window.py（按标题抓窗口截图）、
+              csv-diff.mjs
+artifacts/    自检产出的报告（不参与打包）
+dist/         一键构建归置出的发行目录（不参与打包）
 ```
 
 ## 外壳
@@ -42,6 +44,43 @@ Windows 和 Linux 转交第二个实例的文件；macOS 通过系统的应用�
 它交给界面的**只有路径**，格式一律由核心判定。
 
 ## 构建
+
+### 一键构建（推荐）
+
+各用各平台自带的 shell，两份做的是同一件事（同样的五步、同样的开关、同样的归置布局）：
+
+```bash
+tools/build-all.sh                                            # Linux / macOS
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build-all.ps1  # Windows
+```
+
+Windows 也可以用 Git Bash 跑 `tools/build-all.sh`；不想开 Git Bash 就用上面那条 PowerShell。
+
+默认做完全部五步：构建 C++ 核心 → 跑核心单测 → `pub get` / `analyze` / `flutter test`
+→ 构建 Flutter 发行版 → 归置到 `dist/PDScope-<平台>-<架构>/`。
+最后那个目录是**可以直接双击运行**的：Windows 双击 `PDScope.exe`，macOS 双击
+`PDScope.app`，Linux 双击 `PDScope`；核心动态库、`data/` 与许可声明都在同一层，
+不需要额外装什么。归置完还会断言核心库确实躺在可执行文件旁边 —— 因为
+`runner/CMakeLists.txt` 在核心库缺失时**只 WARNING 不报错**，界面照样编译成功、
+运行时才弹「核心动态库没有加载成功」。
+
+开关（bash / PowerShell）：`--no-tests` / `-NoTests`（只编译）、`--core-only` /
+`-CoreOnly`、`--app-only` / `-AppOnly`、`--debug` / `-DebugBuild`、`--clean` / `-Clean`、
+`--jobs N` / `-Jobs N`、`--flutter <SDK 目录>` / `-Flutter <SDK 目录>`、
+`--out <目录>` / `-OutDir <目录>`。
+找不到 Flutter SDK 时会按 参数 → `PDSCOPE_FLUTTER`/`FLUTTER_ROOT` → `PATH`
+→ 几个常见位置依次找，都不中就报错并说明怎么给。
+
+两份脚本都自己找一套**真的带 `cl.exe`** 的 MSVC 工具集（`build-all.sh` 走
+`msvc-env.sh`，判据已改成必须存在 `cl.exe`），所以不会撞上「按版本号取最大」挑到
+残缺目录的坑。
+
+⚠ `tools/build-all.ps1` 必须保持**带 BOM 的 UTF-8**。Windows PowerShell 5.1 读 `.ps1`
+时若没有 BOM 会按系统代码页解码，中文注释变乱码，而乱码字节里只要有一个落成引号或
+括号，脚本就报语法错误、行号还指向注释中间。改完记得确认 BOM 还在。
 
 ### 核心与命令行
 
