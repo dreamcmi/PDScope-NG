@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(PDScope-NG
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "USB PD / UFCS capture analyzer core"
     LANGUAGES C CXX)
 
