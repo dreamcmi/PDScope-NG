@@ -9,6 +9,9 @@
 #       · 双击 PDScope.exe 开界面（它靠 FFI 在自身同目录找 pdscope.dll，已拷好）
 #       · 双击 / 命令行跑 pdscope-cli.exe 直接导出（核心静态链接，单文件可跑）
 #
+# 推 v* 标签时：release-init 先建好草稿 Release，各平台构建完直接把自己的便携包 +
+# 对应 .sha256 传成草稿附件，release 作业最后核对附件是否齐全。
+#
 # 构建顺序必须是「先 CMake 编核心 → 再 flutter build windows」：
 #   runner/CMakeLists.txt 里有一条 POST_BUILD，只要 build/out/pdscope.dll 存在，
 #   flutter 构建完就会自动把它拷进 exe 旁边；先跑 flutter 会拿不到这个库。
@@ -37,9 +40,51 @@ env:
   FLUTTER_VERSION: '3.47.1'
 
 jobs:
+  # ── 先建草稿 Release ─────────────────────────────────────────────
+  # 各平台构建完直接把自己的便携包传成这个草稿的附件，刻意不经 artifact 中转：
+  # artifact 下载回来是「包里的文件」而不是包本身，macOS 的 .app 里一堆同名文件
+  # （App、Info.plist…）按 basename 当附件名会撞成 422 ReleaseAsset.name already exists。
+  # 本作业在分支推送时也照跑（只跳过建 Release 那一步）：build / build-unix 用 needs
+  # 依赖它，而被 needs 到的作业一旦被跳过，依赖方会跟着一起被跳过。
+  release-init:
+    name: 建 Draft Release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 建 Draft Release（仅标签）
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+
+          # .draft 为 true / false；Release 还不存在时 gh api 报 404 → 当作 missing
+          state="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.draft' 2>/dev/null || echo missing)"
+
+          # 已存在的草稿只可能是上一次失败留下的，里面可能粘着误传的残骸附件
+          # （App、Info.plist 之类），删掉重建成干净的草稿。
+          # 已经发布的 Release 不动：那是正式发布，只补传 / 覆盖附件。
+          if [[ "$state" == "true" ]]; then
+            echo "删除上一次留下的草稿：$tag"
+            gh release delete "$tag" --yes --repo "$GITHUB_REPOSITORY"
+            state=missing
+          fi
+
+          if [[ "$state" == "missing" ]]; then
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "PDScope-NG $tag" \
+              --draft \
+              --generate-notes
+            echo "已建好草稿 Release：$tag"
+          else
+            echo "Release $tag 已发布，保持不动，稍后只补传 / 覆盖附件"
+          fi
+
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    needs: release-init
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -152,24 +197,47 @@ jobs:
           Get-ChildItem $zip*
 
       # ── 上传 ────────────────────────────────────────────────────
-      # 单文件直传（archive:false，不打二次 zip），下载下来就是包本身。
-      # archive:false 时 name 参数失效，文件名直接用作 artifact 名。
+      # artifact 只给运行页留档（人工下载 / 排查），Release 附件是各平台构建完
+      # 直接传上去的，不经过 artifact 中转 —— 见下面「上传发行包到 Draft Release」。
+      # 这里显式写 name：不写会退化成默认的 "artifact"，同一次运行里各平台互相重名。
       # 主文件后紧跟它的 .sha256。
       - name: 上传便携包
         uses: actions/upload-artifact@v7
         with:
+          name: PDScope-NG-windows-x64-${{ env.VERSEG }}-portable.zip
           if-no-files-found: error
           retention-days: 30
           path: PDScope-NG-windows-x64-${{ env.VERSEG }}-portable.zip
-          archive: false
 
       - name: 上传便携包校验和
         uses: actions/upload-artifact@v7
         with:
+          name: PDScope-NG-windows-x64-${{ env.VERSEG }}-portable.zip.sha256
           if-no-files-found: error
           retention-days: 30
           path: PDScope-NG-windows-x64-${{ env.VERSEG }}-portable.zip.sha256
-          archive: false
+
+      # ── 传到 Draft Release（仅标签）──────────────────────────────
+      # 直接用本作业刚打好的包，不经 artifact 中转；上传后回读附件列表确认真的挂上了。
+      - name: 上传发行包到 Draft Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $repo = $env:GITHUB_REPOSITORY
+          $zip = "PDScope-NG-windows-x64-$env:VERSEG-portable.zip"
+          $sha = "$zip.sha256"
+
+          gh release upload $tag $zip $sha --clobber --repo $repo
+
+          $names = @(gh release view $tag --repo $repo --json assets --jq '.assets[].name')
+          $names | Sort-Object
+          if ($names -notcontains $zip -or $names -notcontains $sha) {
+            throw "Release 附件缺失：$zip / $sha（当前：$($names -join ', ')）"
+          }
+          Write-Host "已上传：$zip / $sha"
 
       - name: 写运行摘要
         if: always()
@@ -188,6 +256,7 @@ jobs:
   build-unix:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    needs: release-init
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -283,50 +352,91 @@ jobs:
             sha256sum "$bundle-portable.tar.gz" > "$bundle-portable.tar.gz.sha256"
           fi
 
-      - uses: actions/upload-artifact@v7
-        with:
-          if-no-files-found: error
-          retention-days: 30
-          path: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}
-          archive: false
-
-      - uses: actions/upload-artifact@v7
-        with:
-          if-no-files-found: error
-          retention-days: 30
-          path: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}.sha256
-          archive: false
-
-  # 推 v* 标签时把全部产物汇总到一个草稿 Release。
-  release:
-    name: 汇总 Release
-    needs: [build, build-unix]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/download-artifact@v8
-        with:
-          path: dist
-          pattern: PDScope-NG-*
-          merge-multiple: true
-
-      - run: ls -lh dist
-
-      - name: 建 Release 并附上全部产物（已存在就补传覆盖）
+      # ── 传到 Draft Release（仅标签）──────────────────────────────
+      # 同上：用刚打好的包直传 Release，不走 artifact，传完回读附件列表确认。
+      - name: 上传发行包到 Draft Release
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mapfile -t files < <(find dist -type f | sort)
-          printf '共 %d 个文件\n' "${#files[@]}"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" \
-              --title "PDScope-NG $GITHUB_REF_NAME" \
-              --draft \
-              --generate-notes \
-              "${files[@]}"
+          asset="PDScope-NG-${{ matrix.name }}-$VERSEG-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}"
+
+          gh release upload "$GITHUB_REF_NAME" "$asset" "$asset.sha256" \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
+          names="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          printf '%s\n' "$names"
+          if ! grep -Fxq -- "$asset" <<<"$names"; then
+            echo "::error::Release 附件缺失：$asset"
+            exit 1
           fi
+          if ! grep -Fxq -- "$asset.sha256" <<<"$names"; then
+            echo "::error::Release 附件缺失：$asset.sha256"
+            exit 1
+          fi
+          echo "已上传：$asset / $asset.sha256"
+
+      # artifact 只给运行页留档；Release 附件由上面的步骤直接上传（同 Windows 侧）。
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}
+          if-no-files-found: error
+          retention-days: 30
+          path: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}.sha256
+          if-no-files-found: error
+          retention-days: 30
+          path: PDScope-NG-${{ matrix.name }}-${{ env.VERSEG }}-portable.${{ matrix.platform == 'macos' && 'zip' || 'tar.gz' }}.sha256
+
+  # 全部平台上传完毕后核对草稿 Release 的附件：该有的都在，且没有非预期的文件。
+  release:
+    name: 核对 Release 附件
+    needs: [build, build-unix]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 核对草稿 Release 的附件
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+
+          assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)"
+          if [[ -z "$assets" ]]; then
+            echo "::error::草稿 Release $tag 里没有任何附件"
+            exit 1
+          fi
+          printf '共 %d 个附件\n' "$(printf '%s\n' "$assets" | wc -l)"
+          printf '%s\n' "$assets"
+
+          fail=0
+
+          # 每个发行包都要有配套的 .sha256
+          while IFS= read -r name; do
+            if [[ "$name" == *.sha256 ]]; then
+              continue
+            fi
+            if ! grep -Fxq -- "$name.sha256" <<<"$assets"; then
+              echo "::error::缺少校验和：$name.sha256"
+              fail=1
+            fi
+          done <<<"$assets"
+
+          # 非预期附件（例如上一轮失败留下的 .app 内部文件）不该挂在这里
+          while IFS= read -r name; do
+            if [[ ! "$name" =~ ^PDScope-NG-[A-Za-z0-9._-]+-portable\.(zip|tar\.gz)(\.sha256)?$ ]]; then
+              echo "::error::非预期附件：$name"
+              fail=1
+            fi
+          done <<<"$assets"
+
+          if [[ "$fail" != "0" ]]; then
+            exit 1
+          fi
+
+          echo "附件齐全，草稿 $tag 可以发布了"
