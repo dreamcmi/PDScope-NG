@@ -13,17 +13,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/document.dart';
+import '../core/live_source.dart';
 import '../core/palette.dart';
 import '../core/prefs.dart';
 import '../core/shell.dart';
 import '../core/workspace.dart';
+import 'connect_panel.dart';
 import 'detail_panel.dart';
 import 'filter_panel.dart';
+import 'live_bar.dart';
 import 'open_files.dart';
 import 'packet_table.dart';
 import 'tab_strip.dart';
 import 'timeline.dart';
 import 'top_bar.dart';
+import 'trace_panel.dart';
 
 class PdScopeApp extends StatelessWidget {
   const PdScopeApp({super.key, required this.workspace});
@@ -151,6 +155,14 @@ class _AppShellState extends State<AppShell> {
               children: [
                 TopBar(workspace: ws, doc: doc, searchFocus: searchFocus),
                 if (ws.docs.isNotEmpty) TabStrip(workspace: ws),
+                // 实时状态条：整宽结构条，描述的是**会话**而不是某一份数据。
+                // 未进入采集阶段时不出现 —— 那时连接面板自己会说话。
+                if (doc != null && doc.showLiveBar)
+                  LiveBar(
+                    doc: doc,
+                    onExportCsv: () => _exportLiveCsv(context, doc),
+                    onOpenTrace: () => setState(() => doc.showTrace = true),
+                  ),
                 Expanded(
                   child: _Body(workspace: ws, doc: doc),
                 ),
@@ -180,6 +192,11 @@ class _AppShellState extends State<AppShell> {
         HardwareKeyboard.instance.isMetaPressed) {
       if (ev.logicalKey == LogicalKeyboardKey.keyO) {
         unawaited(openFilesViaDialog(ws));
+        return KeyEventResult.handled;
+      }
+      // Ctrl/⌘+D = 连接设备（D 取 Device）。与文件菜单里那一项同一条命令。
+      if (ev.logicalKey == LogicalKeyboardKey.keyD) {
+        ws.openLive();
         return KeyEventResult.handled;
       }
       if (ev.logicalKey == LogicalKeyboardKey.keyW) {
@@ -263,6 +280,10 @@ class _AppShellState extends State<AppShell> {
       case 'openFile':
         unawaited(openFilesViaDialog(ws));
         break;
+      case 'connectDevice':
+        // 三个入口（顶栏按钮 / 文件菜单 · Ctrl+D / 空态按钮）都落到这一条命令上。
+        ws.openLive();
+        break;
       case 'closeCurrent':
         if (ws.activeIndex >= 0) unawaited(ws.closeAt(ws.activeIndex));
         break;
@@ -304,6 +325,38 @@ class _AppShellState extends State<AppShell> {
       default:
         break;
     }
+  }
+
+  /// 采集中导出 CSV 快照 —— **复用离线那条出口**（open_files.dart 的
+  /// exportViaDialog），不在这里再写一份：那个函数里已经处理了实时分支，
+  /// 顶栏导出菜单、外壳原生菜单、状态条按钮因此共用同一套口径与提示语。
+  Future<void> _exportLiveCsv(BuildContext context, CaptureDocument doc) =>
+      exportViaDialog(context, ws, doc, 'csv');
+
+  /// 导出通讯日志（制表符分隔的纯文本）。
+  ///
+  /// 顶层函数而不是 _AppShellState 的方法：状态条的按钮、底部区的头部
+  /// 都要能调到它，而 _Body 是无状态组件，拿不到外层的 State。
+  static Future<void> _exportTrace(BuildContext context, CaptureDocument doc) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final l = doc.live;
+    if (l == null || l.trace.isEmpty) {
+      messenger?.showSnackBar(const SnackBar(content: Text('还没有通讯记录')));
+      return;
+    }
+    final b = StringBuffer('时间(ms)\t方向\t字节\t说明\n');
+    for (final e in l.trace) {
+      b.write('${e.ms.toStringAsFixed(3)}\t${e.tx ? 'TX' : 'RX'}\t${e.bytes}\t${e.note}\n');
+    }
+    final path = await saveTextAs(
+      text: b.toString(),
+      suggestedName: '通讯日志-${doc.liveCsvName().replaceAll(RegExp(r'\.csv$'), '')}.txt',
+      extension: 'txt',
+      typeLabel: '文本',
+    );
+    messenger?.showSnackBar(
+      SnackBar(content: Text(path == null ? '已取消' : '已导出 $path')),
+    );
   }
 
   /// 把「界面现在什么样」报给外壳：窗口标题 + 菜单项的灰/勾选。
@@ -407,8 +460,18 @@ class _Body extends StatelessWidget {
             child: Column(
               children: [
                 if (d.notice != null) _NoticeBar(text: d.notice!),
+                // 停车 / 掉线：横幅而不是弹窗 —— 弹窗会遮住表格，
+                // 而此刻用户最想做的恰恰是去看那些已经采到的报文。
+                if (d.liveState == LiveState.parked)
+                  _LiveStopBanner(doc: d),
+                if (d.liveState == LiveState.disconnected)
+                  _LiveDropoutBanner(doc: d),
                 Expanded(
-                  child: PacketTable(workspace: workspace, doc: d),
+                  // 还没开始采集：中列让给连接面板。骨架不变 ——
+                  // 左右两栏仍是筛选与详情，只是中间暂时没有数据。
+                  child: d.livePreCapture
+                      ? ConnectPanel(doc: d)
+                      : PacketTable(workspace: workspace, doc: d),
                 ),
                 _ResizeBar(
                   axis: Axis.vertical,
@@ -418,7 +481,38 @@ class _Body extends StatelessWidget {
                 ),
                 SizedBox(
                   height: prefs.tlH,
-                  child: Timeline(workspace: workspace, doc: d),
+                  // 底部区双模式：只有实时文档能切到通讯日志。
+                  child: d.isLive && d.showTrace
+                      ? TracePanel(
+                          trace: d.live?.trace ?? const [],
+                          modeSwitch: BottomModeSwitch(
+                            showTrace: true,
+                            // _Body 是无状态组件 —— 走文档自己的通知（touch）
+                            // 而不是 setState；_RepaintSource 已经在听它了。
+                            onChanged: (v) {
+                              d.showTrace = v;
+                              d.touch();
+                            },
+                          ),
+                          onExport: () => _AppShellState._exportTrace(context, d),
+                          onClear: () {
+                            d.live?.trace.clear();
+                            d.touch();
+                          },
+                        )
+                      : Timeline(
+                          workspace: workspace,
+                          doc: d,
+                          modeSwitch: d.isLive
+                              ? BottomModeSwitch(
+                                  showTrace: false,
+                                  onChanged: (v) {
+                                    d.showTrace = v;
+                                    d.touch();
+                                  },
+                                )
+                              : null,
+                        ),
                 ),
               ],
             ),
@@ -585,6 +679,98 @@ class _NoticeBar extends StatelessWidget {
   }
 }
 
+/// 主动停车 / 设备掉线的横幅。
+///
+/// 用横幅而不是弹窗：弹窗会遮住表格，而此刻用户最想做的恰恰是
+/// **去看那些已经采到的报文**（设计第 8 节）。动作按钮在状态条上，
+/// 横幅只负责说清「出事了 / 为什么 / 已采的还在」。
+class _LiveStopBanner extends StatelessWidget {
+  const _LiveStopBanner({required this.doc});
+  final CaptureDocument doc;
+
+  @override
+  Widget build(BuildContext context) => _liveBanner(
+    context,
+    doc,
+    title: '已主动停止采集并断开设备',
+    icon: Icons.block,
+    tail: '不会自动重连：要不要重来由你决定，重新连接请先「断开设备」再查找。',
+  );
+}
+
+class _LiveDropoutBanner extends StatelessWidget {
+  const _LiveDropoutBanner({required this.doc});
+  final CaptureDocument doc;
+
+  @override
+  Widget build(BuildContext context) => _liveBanner(
+    context,
+    doc,
+    // 不复用状态条上那两个词（「设备已断开」）—— 那句最响的行应该补上**后果**，
+    // 而不是把用户刚在状态条上读过的四个字再喊一遍。
+    title: '设备已断开，采集已停止',
+    icon: Icons.usb_off,
+    tail: '重新连接请先「重新查找」。',
+  );
+
+}
+
+Widget _liveBanner(
+  BuildContext context,
+  CaptureDocument doc, {
+  required String title,
+  required IconData icon,
+  required String tail,
+}) {
+  final p = PaletteScope.of(context);
+  final n = doc.live?.rowCount ?? 0;
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    decoration: BoxDecoration(
+      color: p.bad.withValues(alpha: 0.12),
+      border: Border(bottom: BorderSide(color: p.line)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 14, color: p.bad),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: p.bad,
+                ),
+              ),
+              if (doc.liveMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    doc.liveMessage!,
+                    style: TextStyle(fontSize: 12, color: p.tx2, height: 1.6),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Text(
+                  '已采到的 $n 条报文仍然完整可用 —— 可以直接筛选、看详情、导出 CSV。$tail',
+                  style: TextStyle(fontSize: 11.5, color: p.tx3, height: 1.6),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 /// 一份文件都没开时的引导。
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.workspace});
@@ -601,14 +787,27 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 14),
           Text('把抓包文件拖进来，或', style: TextStyle(fontSize: 13, color: p.tx2)),
           const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: () => unawaited(openFilesViaDialog(workspace)),
-            icon: const Icon(Icons.folder_open, size: 16),
-            label: const Text('打开文件'),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => unawaited(openFilesViaDialog(workspace)),
+                icon: const Icon(Icons.folder_open, size: 16),
+                label: const Text('打开文件'),
+              ),
+              const SizedBox(width: 10),
+              // 第三个入口就在空态里 —— 首次使用的人一眼能看到「还能连设备」。
+              OutlinedButton.icon(
+                onPressed: workspace.openLive,
+                icon: const Icon(Icons.usb_rounded, size: 16),
+                label: const Text('连接设备'),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
           Text(
-            '支持 .atkcc、.sqlite、.pdStream、.ufcsStream',
+            '支持 .atkcc、.sqlite、.pdStream、.ufcsStream\n'
+            '也可以接上分析仪边抓边看（Ctrl+D）',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11.5, color: p.tx3, height: 1.7),
           ),
@@ -631,7 +830,16 @@ class _StatusBar extends StatelessWidget {
     final d = doc;
     final parts = <String>[];
     if (d?.meta != null) {
-      parts.add('文件 ${d!.meta!.fileBytes} 字节');
+      // 实时文档**没有文件**：说「文件 0 字节」既没用又容易让人以为没读到东西。
+      // 换成设备与传输方式，那才是这份数据真正的来源。
+      if (d!.isLive) {
+        final dev = d.liveDevice;
+        parts.add(
+          dev == null ? '实时采集' : '设备 ${dev.name} · ${dev.transport}',
+        );
+      } else {
+        parts.add('文件 ${d.meta!.fileBytes} 字节');
+      }
       parts.add('报文 ${d.rows.total}');
       if (d.decoded && d.stats != null) {
         parts.add('总采样 ${d.stats!.totalSamples}');

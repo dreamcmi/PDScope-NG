@@ -341,6 +341,8 @@ class DecodeStats {
         return '手动指定';
       case 'powerz':
         return '分析仪时间戳';
+      case 'live':
+        return '设备时间戳';
       default:
         return sampleRateSource.isEmpty ? '—' : sampleRateSource;
     }

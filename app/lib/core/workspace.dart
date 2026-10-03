@@ -17,6 +17,7 @@ import 'document.dart';
 import 'engine.dart';
 import 'ffi.dart';
 import 'filters.dart';
+import 'live_source.dart';
 import 'models.dart';
 import 'prefs.dart';
 
@@ -156,7 +157,36 @@ class Workspace extends ChangeNotifier {
     return doc;
   }
 
+  /// 打开（或切回）实时采集标签。
+  ///
+  /// 三个入口都落到这里：顶栏按钮、文件菜单 / Ctrl+D、空工作区空态。
+  ///
+  /// **实时标签全局只允许一个** —— 一台设备只能有一个会话，两个实时标签会互相抢设备，
+  /// 而且「哪个标签代表设备」会变得含糊。已有就切过去，不新建。
+  CaptureDocument openLive() {
+    for (var i = 0; i < docs.length; i++) {
+      if (docs[i].isLive) {
+        _activeIndex = i;
+        notifyListeners();
+        return docs[i];
+      }
+    }
+    final doc = CaptureDocument(
+      id: _nextId++,
+      path: '', // 实时采集没有路径
+      displayName: '实时采集',
+    );
+    // 设备源可插拔：现在挂的是模拟源。真协议接入时换掉这一行即可，
+    // 界面与 LiveSession 都不需要动。
+    doc.attachLive(MockLiveSource());
+    docs.add(doc);
+    _activeIndex = docs.length - 1;
+    notifyListeners();
+    return doc;
+  }
+
   /// 懒解码：已解码、正在解、或打不开的文件直接返回。
+  /// （实时文档没有解码这一步：它的 state 直接就是 done。）
   Future<void> decode(CaptureDocument doc) async {
     if (!docs.contains(doc) ||
         doc.decoded ||
@@ -292,6 +322,15 @@ class Workspace extends ChangeNotifier {
     if (_activeIndex >= docs.length) _activeIndex = docs.length - 1;
     if (_activeIndex < 0) _activeIndex = -1;
     notifyListeners();
+    // 实时标签**没有引擎会话**：它的 id 只是工作区自己编的号，
+    // 交给 engine.close 会去关一个从没打开过的会话。
+    if (doc.isLive) {
+      await doc.liveSource?.stop();
+      await doc.liveSource?.disconnect();
+      doc.dispose();
+      if (activateNext && wasActive && active != null) unawaited(decode(active!));
+      return;
+    }
     final e = await ready;
     if (doc.state == DocState.decoding) e.cancel(doc.id);
     // Opening, decoding and closing the same native session must stay in order.

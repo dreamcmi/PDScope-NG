@@ -33,6 +33,7 @@ constexpr ULONG_PTR kCopyDataMagic = 0x50535031;
 // 菜单命令 id。从 1001 起，避开系统占用的低位区段。
 enum MenuCommand {
   kMenuOpen = 1001,
+  kMenuConnect,  // 连接设备（实时采集）
   kMenuClose,
   kMenuCloseAll,
   kMenuExportCsv,

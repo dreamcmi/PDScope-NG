@@ -45,17 +45,30 @@ Dart 与外壳共用一条通道：`pdscope/shell`（`app/lib/core/shell.dart` �
 | 菜单 | 项 | 命令 | 备注 |
 | --- | --- | --- | --- |
 | 文件(&F) | 打开抓包… `Ctrl+O` | `openFile` | |
-| | 导出 CSV（当前筛选结果） | `exportCsv` | 没有打开的文件时置灰 |
-| | 导出 JSON（全部报文） | `exportJson` | 同上 |
+| | 连接设备… `Ctrl+D` | `connectDevice` | 实时采集；见 [`live-capture.md`](live-capture.md) |
+| | 关闭当前标签 `Ctrl+W` | `closeCurrent` | |
+| | 关闭全部抓包 | `closeAll` | |
+| | 导出 CSV（当前筛选结果） | `exportCsv` | 没有打开的抓包时置灰；实时标签导的是快照 |
+| | 导出 JSON（全部报文） | `exportJson` | 同上；实时采集只支持 CSV |
 | | 退出 | — | 直接 `WM_CLOSE`，不经 Dart |
-| 视图(&V) | 切换明暗主题 `T` | `toggleTheme` | |
+| 视图(&V) | 搜索报文 `Ctrl+F` | `search` | |
+| | 切换明暗主题 `T` | `toggleTheme` | |
+| | 紧凑 / 舒适行高 | `toggleDense` | |
 | | 显示筛选栏 | `toggleFilters` | 勾选状态由 Dart 报 |
 | | 显示详情面板 | `toggleDetail` | 同上 |
 | | 重置布局 | `resetLayout` | 展开两栏并回到默认尺寸 |
 | 帮助(&H) | 关于 PDScope | `about` | 与顶栏的「关于」是同一段代码 |
 
+共 14 项。`Ctrl+O` / `Ctrl+W` / `Ctrl+F` / `Ctrl+D` 写进菜单文字是**显示用**的，
+真正的快捷键由界面侧接管（`app.dart` 的 `_handleKey`）；`T` 同理。
+Linux 外壳另用 `gtk_application_set_accels_for_action` 注册了一份。
+
 菜单**不自己实现动作**：点击后一律把命令交给 Dart，与界面上的按钮走同一套代码
 （`app/lib/ui/app.dart` 的 `_runShellCommand`）。否则同一件事迟早会在菜单和界面里长成两个样子。
+
+⚠ 加菜单项时注意 `shell.h` 里的 `MenuCommand` 枚举**是连号的**（`kMenuOpen = 1001` 起）：
+要在中间插一项，后面的 id 会整体顺延 —— `flutter_window.cpp` 用枚举名做映射，
+所以两边一起改就没事，但**别只改一处**，也别硬写数字。
 
 `shellState` 由界面在状态变化时上报（去重后才发）：外壳看不见 widget 树，
 菜单项的灰/亮只能由界面说。

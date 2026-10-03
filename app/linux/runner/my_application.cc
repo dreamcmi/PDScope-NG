@@ -31,6 +31,7 @@ struct CommandBinding {
 
 const CommandBinding kCommandBindings[] = {
     {"open-file", "openFile"},
+    {"connect-device", "connectDevice"},
     {"close-current", "closeCurrent"},
     {"close-all", "closeAll"},
     {"export-csv", "exportCsv"},
@@ -254,6 +255,7 @@ void InstallActions(MyApplication* self, GtkWindow* window) {
 GtkWidget* CreateMenuBar() {
   GMenu* file_menu = g_menu_new();
   g_menu_append(file_menu, "打开抓包…", "win.open-file");
+  g_menu_append(file_menu, "连接设备…", "win.connect-device");
   g_menu_append(file_menu, "关闭当前标签", "win.close-current");
   g_menu_append(file_menu, "关闭全部抓包", "win.close-all");
 
@@ -293,10 +295,13 @@ GtkWidget* CreateMenuBar() {
 
 void SetAccelerators(MyApplication* self) {
   const gchar* open_accels[] = {"<Primary>o", nullptr};
+  const gchar* connect_accels[] = {"<Primary>d", nullptr};
   const gchar* close_accels[] = {"<Primary>w", nullptr};
   const gchar* search_accels[] = {"<Primary>f", nullptr};
   gtk_application_set_accels_for_action(GTK_APPLICATION(self), "win.open-file",
                                         open_accels);
+  gtk_application_set_accels_for_action(GTK_APPLICATION(self),
+                                        "win.connect-device", connect_accels);
   gtk_application_set_accels_for_action(GTK_APPLICATION(self),
                                         "win.close-current", close_accels);
   gtk_application_set_accels_for_action(GTK_APPLICATION(self), "win.search",

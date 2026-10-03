@@ -245,6 +245,12 @@ class TopBar extends StatelessWidget {
           tip: '打开文件（Ctrl+O）',
           onTap: () => unawaited(openFilesViaDialog(workspace)),
         ),
+        // 实时采集的主入口（另两个：文件菜单 / Ctrl+D，以及空工作区空态里那个按钮）。
+        _IconBtn(
+          icon: Icons.usb_rounded,
+          tip: '连接设备，边抓边看（Ctrl+D）',
+          onTap: workspace.openLive,
+        ),
         _ExportMenu(workspace: workspace, doc: d),
         _IconBtn(
           icon: workspace.prefs.isDark ? Icons.light_mode : Icons.dark_mode,
@@ -265,6 +271,9 @@ class TopBar extends StatelessWidget {
     switch (m.container) {
       case 'atkcc':
         return 'ATK-C · .atkcc';
+      case 'live':
+        // 实时文档：来源是设备，不是文件 —— chip 要说清这一点。
+        return '实时采集 · 设备';
       case 'pdstream':
         return 'POWER-Z · .pdStream';
       case 'ufcsstream':

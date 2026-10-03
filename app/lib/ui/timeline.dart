@@ -37,10 +37,19 @@ Rect _timelinePlot(Size size) => Rect.fromLTRB(
 enum _TimelineDragAxis { horizontal, vertical }
 
 class Timeline extends StatefulWidget {
-  const Timeline({super.key, required this.workspace, required this.doc});
+  const Timeline({
+    super.key,
+    required this.workspace,
+    required this.doc,
+    this.modeSwitch,
+  });
 
   final Workspace workspace;
   final CaptureDocument doc;
+
+  /// 底部区的模式切换（模拟量轨迹 ⇄ 通讯日志）。
+  /// 只有实时文档会传；文件抓包没有通讯日志，传 null 时头部与原来完全一样。
+  final Widget? modeSwitch;
 
   @override
   State<Timeline> createState() => _TimelineState();
@@ -234,6 +243,10 @@ class _TimelineState extends State<Timeline> {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
+          if (widget.modeSwitch != null) ...[
+            widget.modeSwitch!,
+            const SizedBox(width: 10),
+          ],
           Text(
             doc.tlMode == TlMode.aux ? auxLabels : 'VBUS / IBUS',
             style: TextStyle(
@@ -327,7 +340,12 @@ class _TimelineState extends State<Timeline> {
       children: [
         Text('没有模拟量轨迹', style: TextStyle(fontSize: 12, color: p.tx2)),
         const SizedBox(height: 5),
-        Text('这份文件不含电压 / 电流采样', style: TextStyle(fontSize: 11, color: p.tx3)),
+        // 实时采集时「这份文件」是错的 —— 根本没有文件。
+        // 说清「还没采到」而不是「不含」，因为前者是暂时的、后者是结论。
+        Text(
+          doc.isLive ? '还没有采到电压 / 电流采样' : '这份文件不含电压 / 电流采样',
+          style: TextStyle(fontSize: 11, color: p.tx3),
+        ),
       ],
     ),
   );

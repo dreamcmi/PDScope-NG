@@ -263,6 +263,9 @@ void FlutterWindow::HandleMenuCommand(int id) {
     case pdscope_shell::kMenuOpen:
       command = "openFile";
       break;
+    case pdscope_shell::kMenuConnect:
+      command = "connectDevice";
+      break;
     case pdscope_shell::kMenuClose:
       command = "closeCurrent";
       break;

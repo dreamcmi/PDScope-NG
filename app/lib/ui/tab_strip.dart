@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/document.dart';
+import '../core/live_source.dart';
 import '../core/palette.dart';
 import '../core/workspace.dart';
 
@@ -131,6 +132,40 @@ class _Tab extends StatelessWidget {
         width: 9,
         height: 9,
         child: CircularProgressIndicator(strokeWidth: 1.5, color: p.accent),
+      );
+    }
+    // 实时标签：状态由 LiveState 决定，而不是文件那套 DocState
+    // （它的 state 一直是 done —— 实时文档没有「解码」这一步）。
+    if (doc.isLive) {
+      final color = switch (doc.liveState) {
+        LiveState.capturing => p.accent,
+        LiveState.paused || LiveState.recoverableError => p.warn,
+        LiveState.parked || LiveState.disconnected => p.bad,
+        _ => p.ok,
+      };
+      // 采集中的圆点外套一圈光环 —— 沿用标签既有的圆点语言，不引入新形状。
+      // 它回答的是「这个标签是活的」，与 LiveBar 上的呼吸点是两处呼应。
+      if (doc.liveCapturing) {
+        return Container(
+          width: 11,
+          height: 11,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withValues(alpha: 0.22),
+          ),
+          child: Center(
+            child: Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+            ),
+          ),
+        );
+      }
+      return Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       );
     }
     final color = switch (doc.state) {

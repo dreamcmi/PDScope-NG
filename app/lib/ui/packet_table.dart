@@ -52,6 +52,7 @@ class _PacketTableState extends State<PacketTable> {
   final _v = ScrollController();
   int? _lastDocId;
   int? _lastSelection;
+  int _lastTotal = 0;
 
   @override
   void dispose() {
@@ -67,6 +68,26 @@ class _PacketTableState extends State<PacketTable> {
     if (_lastDocId != doc.id) {
       _lastDocId = doc.id;
       _lastSelection = null;
+      _lastTotal = doc.rows.total;
+    }
+    // 实时采集的「跟随尾部」。
+    //
+    // ⚠ 判据是「**现在已经在底部**」才继续跟随，而不是无脑跳到底：
+    //   用户往上翻就一定是在看历史，这时把他拽回最新一条是最讨厌的行为。
+    //   这条判据不需要额外的滚动监听，自己就收敛。
+    if (doc.isLive && doc.liveCapturing && doc.rows.total != _lastTotal) {
+      final grew = doc.rows.total > _lastTotal;
+      _lastTotal = doc.rows.total;
+      if (grew) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_v.hasClients || !doc.liveCapturing) return;
+          final pos = _v.position;
+          final slack = widget.workspace.prefs.rowH * 4;
+          if (pos.maxScrollExtent - pos.pixels <= slack) {
+            _v.jumpTo(pos.maxScrollExtent);
+          }
+        });
+      }
     }
     final selected = doc.selectedViewIndex;
     if (_lastSelection != selected) {

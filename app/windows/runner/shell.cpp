@@ -180,6 +180,7 @@ HMENU BuildMenu() {
 
   HMENU file = ::CreatePopupMenu();
   ::AppendMenuW(file, MF_STRING, kMenuOpen, L"打开抓包…\tCtrl+O");
+  ::AppendMenuW(file, MF_STRING, kMenuConnect, L"连接设备…\tCtrl+D");
   ::AppendMenuW(file, MF_STRING, kMenuClose, L"关闭当前标签\tCtrl+W");
   ::AppendMenuW(file, MF_STRING, kMenuCloseAll, L"关闭全部抓包");
   ::AppendMenuW(file, MF_SEPARATOR, 0, nullptr);

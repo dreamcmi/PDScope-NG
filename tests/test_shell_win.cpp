@@ -61,6 +61,8 @@ constexpr const wchar_t kViewMenuLabel[] = L"\u89c6\u56fe(&V)";              // 
 constexpr const wchar_t kHelpMenuLabel[] = L"\u5e2e\u52a9(&H)";              // 帮助(&H)
 constexpr const wchar_t kOpenItemLabel[] =
     L"\u6253\u5f00\u6293\u5305\u2026\tCtrl+O";                               // 打开抓包…\tCtrl+O
+constexpr const wchar_t kConnectItemLabel[] =
+    L"\u8fde\u63a5\u8bbe\u5907\u2026\tCtrl+D";                               // 连接设备…\tCtrl+D
 
 }  // namespace
 
@@ -150,6 +152,12 @@ TEST(shell_menu_labels_and_state) {
   CHECK_EQ(::GetMenuItemID(file, 0), static_cast<UINT>(pdscope_shell::kMenuOpen));
   CHECK(::GetMenuStringW(file, 0, buf, 128, MF_BYPOSITION) > 0);
   CHECK(wcscmp(buf, kOpenItemLabel) == 0);
+  // 实时采集的入口就排在「打开抓包」后面。MenuCommand 是连号枚举，
+  // 插在中间会让后面的 id 整体顺延 —— 这里按**位置**钉一下，
+  // 免得哪天顺手插到别处（或忘了改 flutter_window.cpp 的映射）而没人发现。
+  CHECK_EQ(::GetMenuItemID(file, 1), static_cast<UINT>(pdscope_shell::kMenuConnect));
+  CHECK(::GetMenuStringW(file, 1, buf, 128, MF_BYPOSITION) > 0);
+  CHECK(wcscmp(buf, kConnectItemLabel) == 0);
 
   HMENU view = ::GetSubMenu(bar, 1);
   CHECK(view != nullptr);

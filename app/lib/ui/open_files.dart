@@ -37,6 +37,43 @@ Future<void> exportViaDialog(
     return;
   }
 
+  // 实时文档：数据在界面进程里，不走核心 —— 导出的是**到此刻为止的 CSV 快照**。
+  // 与离线共用同一个出口，所以「顶栏导出菜单」和「外壳原生菜单」两边都是一致的。
+  if (doc.isLive) {
+    if (kind != 'csv') {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('实时采集目前只导出 CSV')),
+      );
+      return;
+    }
+    final l = doc.live!;
+    final n = l.viewCount;
+    final t = l.stats.durationSec;
+    try {
+      // 落盘带 BOM（与核心 csv.cpp 的「写文件带、走管道不带」同口径）。
+      final path = await saveTextAs(
+        text: '\uFEFF${doc.liveCsvText()}',
+        suggestedName: doc.liveCsvName(),
+        extension: 'csv',
+        typeLabel: 'CSV',
+      );
+      messenger?.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 6),
+          content: Text(
+            path == null
+                ? '已取消'
+                : '已导出 $n 条（截至 ${t.toStringAsFixed(1)} s）'
+                      ' —— 这是到此刻为止的快照，不是完整抓包',
+          ),
+        ),
+      );
+    } catch (err) {
+      messenger?.showSnackBar(SnackBar(content: Text('导出失败：$err')));
+    }
+    return;
+  }
+
   final e = await ws.ready;
   try {
     final String text;

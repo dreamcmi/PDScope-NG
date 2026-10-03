@@ -72,6 +72,7 @@ class AppDelegate: FlutterAppDelegate {
     let fileMenu = NSMenu(title: "文件")
     fileMenu.autoenablesItems = false
     fileMenu.addItem(commandItem("打开抓包…", command: "openFile", key: "o"))
+    fileMenu.addItem(commandItem("连接设备…", command: "connectDevice", key: "d"))
     fileMenu.addItem(commandItem("关闭当前标签", command: "closeCurrent", key: "w"))
     fileMenu.addItem(commandItem("关闭全部抓包", command: "closeAll"))
     fileMenu.addItem(.separator())
