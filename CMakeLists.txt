@@ -128,7 +128,7 @@ if(MSVC)
     set(PDSCOPE_DEF_SRC core/pdscope.def)
 endif()
 
-add_library(pdscope SHARED core/src/abi.cpp ${PDSCOPE_DEF_SRC})
+add_library(pdscope SHARED core/src/abi.cpp core/src/live_pd.cpp ${PDSCOPE_DEF_SRC})
 target_include_directories(pdscope PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/core/include)
 # abi.cpp 要经 session.h 拿到核心内部类型（util.h 里有 nlohmann/json），
 # 所以这几条 include 与其它消费核心内部头的目标保持一致。
@@ -173,11 +173,13 @@ add_executable(pdscope-tests
     tests/test_ufcs.cpp
     tests/test_csv.cpp
     tests/test_abi.cpp
+    tests/test_live_pd.cpp
     # ⚠ 把 C ABI 的实现也编进测试目标，测试才能真的调 pdscope_open_file 这些函数。
     #   之前只测 C++ 内部接口，"边界上这一层"完全没覆盖 —— 结果就是一个
     #   「Windows 打不开非 ASCII 路径」的 bug 一路躲过了全部测试，
     #   最后是 Dart 侧的集成测试才把它揪出来（见 tests/test_path.cpp）。
-    core/src/abi.cpp)
+    core/src/abi.cpp
+    core/src/live_pd.cpp)
 target_compile_definitions(pdscope-tests PRIVATE PDSCOPE_BUILD_SHARED=1)
 target_link_libraries(pdscope-tests PRIVATE pdscope_core)
 target_include_directories(pdscope-tests PRIVATE

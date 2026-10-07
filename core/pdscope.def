@@ -11,6 +11,10 @@ EXPORTS
     pdscope_status_name
     pdscope_buf_free
     pdscope_str_free
+    pdscope_live_pd_create
+    pdscope_live_pd_reset
+    pdscope_live_pd_decode
+    pdscope_live_pd_close
     pdscope_open_bytes
     pdscope_open_file
     pdscope_close

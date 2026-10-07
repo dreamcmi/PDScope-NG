@@ -19,9 +19,9 @@
 // 与模板的差别只在「外壳那一层」：拖放、命令行/文件关联、别的实例转交进来的路径、
 // 以及中文菜单。解析和界面仍然全在 Dart + 核心动态库里。
 class FlutterWindow : public Win32Window {
- public:
+public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
-  explicit FlutterWindow(const flutter::DartProject& project);
+  explicit FlutterWindow(const flutter::DartProject &project);
   virtual ~FlutterWindow();
 
   // 引擎起来前就收到的路径（命令行，或另一个实例转交过来）。
@@ -30,14 +30,14 @@ class FlutterWindow : public Win32Window {
   //   这时候发出去的消息会石沉大海。先存着，等 Dart 自己说 ready 再一起发。
   void SetPendingOpenPaths(std::vector<std::string> paths);
 
- protected:
+protected:
   // Win32Window:
   bool OnCreate() override;
   void OnDestroy() override;
   LRESULT MessageHandler(HWND window, UINT const message, WPARAM const wparam,
                          LPARAM const lparam) noexcept override;
 
- private:
+private:
   // Flutter 视图那个子窗口的消息过程。
   //
   // ⚠ 为什么必须挂这一级：客户区被 Flutter 的子窗口整个盖住，文件拖进来时
@@ -49,7 +49,7 @@ class FlutterWindow : public Win32Window {
   void InstallChannelHandler();
   void HandleDrop(HDROP drop);
   void HandleMenuCommand(int id);
-  void SendPaths(const std::vector<std::string>& paths);
+  void SendPaths(const std::vector<std::string> &paths);
   void FlushPendingPaths();
 
   // The project to run.
@@ -71,6 +71,10 @@ class FlutterWindow : public Win32Window {
   // Dart 侧还没说 ready 时先攒在这里的路径。
   std::vector<std::string> pending_paths_;
   bool dart_ready_ = false;
+  /** @brief 已向 Dart 请求收尾，重复关闭消息不重复提交请求。 */
+  bool close_pending_ = false;
+  /** @brief Dart 已完成设备收尾，此后允许销毁窗口。 */
+  bool close_allowed_ = false;
 };
 
-#endif  // RUNNER_FLUTTER_WINDOW_H_
+#endif // RUNNER_FLUTTER_WINDOW_H_

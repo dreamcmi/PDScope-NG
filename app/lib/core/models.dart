@@ -30,13 +30,14 @@ class PacketRow {
       msgId = j['msgId'] == null ? null : _i(j['msgId']),
       objects = j['objects'] == null ? null : _i(j['objects']),
       bytes = j['bytes'] == null ? null : _i(j['bytes']),
-      timeMs = _d(j['timeMs']),
+      timeMs = _d(j['timeMs'], double.nan),
+      timeUncertain = _b(j['timeUncertain']),
       elapsed = _s(j['elapsed']),
       startSample = _i(j['startSample']),
       endSample = _i(j['endSample']),
-      durationUs = _d(j['durationUs']),
-      vbus = _d(j['vbus']),
-      ibus = _d(j['ibus']),
+      durationUs = _d(j['durationUs'], double.nan),
+      vbus = _d(j['vbus'], double.nan),
+      ibus = _d(j['ibus'], double.nan),
       dataHex = _s(j['dataHex']),
       crc = _s(j['crc']),
       summary = _s(j['summary']),
@@ -56,6 +57,7 @@ class PacketRow {
   final int? objects; // PD：数据对象个数
   final int? bytes; // UFCS：数据字节数
   final double timeMs;
+  final bool timeUncertain;
   final String elapsed;
   final int startSample;
   final int endSample;
@@ -72,7 +74,8 @@ class PacketRow {
   bool get isBadCrc => crc == 'bad';
 
   /// 「Obj」列：PD 写对象数，UFCS 写字节数。
-  String get objText => objects != null ? '$objects' : (bytes != null ? '$bytes' : '');
+  String get objText =>
+      objects != null ? '$objects' : (bytes != null ? '$bytes' : '');
 }
 
 /* ────────────────────────── 详情 ────────────────────────── */
@@ -117,10 +120,24 @@ class PacketDetail {
           .whereType<Map<String, dynamic>>()
           .map((e) => PacketWarning(_s(e['long']), _s(e['short'])))
           .toList(),
-      dataWords = (j['dataWords'] as List? ?? const []).map((e) => _i(e)).toList(),
-      dataBytes = (j['dataBytes'] as List? ?? const []).map((e) => _i(e)).toList();
+      dataWords = (j['dataWords'] as List? ?? const [])
+          .map((e) => _i(e))
+          .toList(),
+      dataBytes = (j['dataBytes'] as List? ?? const [])
+          .map((e) => _i(e))
+          .toList(),
+      rawPayload = (j['rawPayload'] as List? ?? const [])
+          .map((e) => _i(e))
+          .toList(),
+      pdFlags = j['pdFlags'] == null ? null : _i(j['pdFlags']),
+      elapsedTicks = j['elapsedTicks'] == null ? null : _i(j['elapsedTicks']);
 
   final PacketRow row;
+
+  /// PCL 头、正文和原始线上 CRC；截短时为真实连续前缀。
+  final List<int> rawPayload;
+  final int? pdFlags;
+  final int? elapsedTicks;
   final String text;
   final int? header;
   final int? extHeader;
@@ -200,17 +217,25 @@ class CaptureMeta {
       title = _s(j['title']),
       sampleRate = _d(j['sampleRate']),
       sampleRateSource = _s(j['sampleRateSource'], 'default'),
-      sampleRateKey = j['sampleRateKey'] == null ? null : _s(j['sampleRateKey']),
-      sampleRateRaw = j['sampleRateRaw'] == null ? null : _s(j['sampleRateRaw']),
+      sampleRateKey = j['sampleRateKey'] == null
+          ? null
+          : _s(j['sampleRateKey']),
+      sampleRateRaw = j['sampleRateRaw'] == null
+          ? null
+          : _s(j['sampleRateRaw']),
       samplingFrequencyRaw = j['samplingFrequencyRaw'] == null
           ? null
           : _s(j['samplingFrequencyRaw']),
-      sampleRateNote = j['sampleRateNote'] == null ? null : _s(j['sampleRateNote']),
+      sampleRateNote = j['sampleRateNote'] == null
+          ? null
+          : _s(j['sampleRateNote']),
       totalSamples = _i(j['totalSamples']),
       durationSec = _d(j['durationSec']),
       entryCount = _i(j['entryCount']),
       multiChannel = _b(j['multiChannel']),
-      busLabels = (j['busLabels'] as List? ?? const []).map((e) => _s(e)).toList(),
+      busLabels = (j['busLabels'] as List? ?? const [])
+          .map((e) => _s(e))
+          .toList(),
       hasBus = _b(j['hasBus']),
       busPoints = _i(j['busPoints']),
       unsupported = j['unsupported'] == null ? null : _s(j['unsupported']),
@@ -230,7 +255,8 @@ class CaptureMeta {
   final String? kind; // pd | ufcs（仅 powerz）
   final String title;
   final double sampleRate;
-  final String sampleRateSource; // declared | measured | default | override | powerz
+  final String
+  sampleRateSource; // declared | measured | default | override | powerz
   final String? sampleRateKey;
   final String? sampleRateRaw;
   final String? samplingFrequencyRaw;
@@ -266,9 +292,13 @@ class DecodeStats {
       durationSec = _d(j['durationSec']),
       sampleRate = _d(j['sampleRate']),
       sampleRateSource = _s(j['sampleRateSource']),
-      sampleRateNote = j['sampleRateNote'] == null ? null : _s(j['sampleRateNote']),
+      sampleRateNote = j['sampleRateNote'] == null
+          ? null
+          : _s(j['sampleRateNote']),
       sampleRateDeclared = _d(j['sampleRateDeclared']),
-      sampleRateMeasured = j['sampleRateMeasured'] == null ? null : _d(j['sampleRateMeasured']),
+      sampleRateMeasured = j['sampleRateMeasured'] == null
+          ? null
+          : _d(j['sampleRateMeasured']),
       edges = _i(j['edges']),
       trimmedBytes = _i(j['trimmedBytes']),
       packetCount = _i(j['packetCount']),
@@ -367,7 +397,8 @@ class BusSeries {
       vbus = _fl(j['vbus']),
       ibus = _fl(j['ibus']),
       ca = j['ca'] == null ? null : _fl(j['ca']),
-      cb = j['cb'] == null ? null : _fl(j['cb']);
+      cb = j['cb'] == null ? null : _fl(j['cb']),
+      times = j['times'] == null ? null : _fl(j['times']);
 
   static Float64List _fl(dynamic v) {
     if (v is List) {
@@ -395,10 +426,32 @@ class BusSeries {
   final Float64List? ca;
   final Float64List? cb;
 
+  /// 实时不规则测量的原始相对秒，文件均匀序列仍使用 t0/step。
+  final Float64List? times;
+
   bool get isEmpty => n == 0 || vbus.isEmpty;
 
   /// 第 i 个点的时间（秒）。
-  double timeAt(int i) => t0 + step * i;
+  double timeAt(int i) =>
+      times != null && i < times!.length ? times![i] : t0 + step * i;
+
+  /// 选取最接近光标时间的实际样本，不伪造固定采样步长。
+  int nearestIndex(double seconds) {
+    if (n == 0) return 0;
+    if (times == null && step > 0) {
+      return ((seconds - t0) / step).round().clamp(0, n - 1);
+    }
+    var best = 0;
+    var distance = double.infinity;
+    for (var i = 0; i < n; i++) {
+      final delta = (timeAt(i) - seconds).abs();
+      if (delta < distance) {
+        distance = delta;
+        best = i;
+      }
+    }
+    return best;
+  }
 }
 
 /// 原始电平包络（`pdscope_waveform_range` 的二进制布局）。
@@ -406,13 +459,17 @@ class WaveformRange {
   WaveformRange(this.n, this.bucket, this.startSample, this.hi, this.lo);
 
   static WaveformRange decode(Uint8List bytes) {
-    if (bytes.length < 20) return WaveformRange(0, 0, 0, Float32List(0), Float32List(0));
+    if (bytes.length < 20) {
+      return WaveformRange(0, 0, 0, Float32List(0), Float32List(0));
+    }
     final bd = ByteData.sublistView(bytes);
     final n = bd.getUint32(0, Endian.little);
     final bucket = bd.getUint64(4, Endian.little);
     final start = bd.getUint64(12, Endian.little);
     final need = 20 + n * 4 * 2;
-    if (bytes.length < need) return WaveformRange(0, 0, 0, Float32List(0), Float32List(0));
+    if (bytes.length < need) {
+      return WaveformRange(0, 0, 0, Float32List(0), Float32List(0));
+    }
     final hi = Float32List(n);
     final lo = Float32List(n);
     for (var i = 0; i < n; i++) {
@@ -437,7 +494,14 @@ class WaveformRange {
 ///
 /// ⚠ 这张表是 **C ABI 的契约**：核心的 `kindCodeOf()`（core/src/session.cpp）按同样
 /// 的顺序编号。加类别要在两边同时改，改错了时间轴的颜色会静默错位。
-const List<String> kKindNames = ['Control', 'Data', 'Extended', 'VDM', 'Error', 'Custom'];
+const List<String> kKindNames = [
+  'Control',
+  'Data',
+  'Extended',
+  'VDM',
+  'Error',
+  'Custom',
+];
 
 String kindNameFromCode(int code) =>
     (code >= 0 && code < kKindNames.length) ? kKindNames[code] : 'Control';
@@ -447,8 +511,12 @@ class PacketMarks {
   PacketMarks(this.n, this.ts, this.kind, this.flags);
 
   /// 空结果（没解码、或没有报文）。
-  static final PacketMarks empty =
-      PacketMarks(0, Float64List(0), Uint8List(0), Uint8List(0));
+  static final PacketMarks empty = PacketMarks(
+    0,
+    Float64List(0),
+    Uint8List(0),
+    Uint8List(0),
+  );
 
   static PacketMarks decode(Uint8List bytes) {
     if (bytes.length < 4) return empty;
@@ -464,7 +532,9 @@ class PacketMarks {
     }
     final kindOff = 4 + n * 8;
     final kind = Uint8List.fromList(bytes.sublist(kindOff, kindOff + n));
-    final flags = Uint8List.fromList(bytes.sublist(kindOff + n, kindOff + n * 2));
+    final flags = Uint8List.fromList(
+      bytes.sublist(kindOff + n, kindOff + n * 2),
+    );
     return PacketMarks(n, ts, kind, flags);
   }
 

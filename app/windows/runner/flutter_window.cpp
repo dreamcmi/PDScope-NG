@@ -1,4 +1,5 @@
 #include "flutter_window.h"
+#include <flutter/method_result_functions.h>
 
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
@@ -17,30 +18,33 @@ constexpr const wchar_t kOwnerProp[] = L"PDScopeFlutterWindowOwner";
 // 通道名。Dart 侧同名，两边只靠它对齐。
 constexpr const char kShellChannel[] = "pdscope/shell";
 
-bool ReadBool(const flutter::EncodableMap& map, const char* key, bool fallback) {
+bool ReadBool(const flutter::EncodableMap &map, const char *key,
+              bool fallback) {
   const auto it = map.find(flutter::EncodableValue(std::string(key)));
-  if (it == map.end()) return fallback;
-  const auto* value = std::get_if<bool>(&it->second);
+  if (it == map.end())
+    return fallback;
+  const auto *value = std::get_if<bool>(&it->second);
   return value == nullptr ? fallback : *value;
 }
 
-std::string ReadString(const flutter::EncodableMap& map, const char* key,
-                       const std::string& fallback) {
+std::string ReadString(const flutter::EncodableMap &map, const char *key,
+                       const std::string &fallback) {
   const auto it = map.find(flutter::EncodableValue(std::string(key)));
-  if (it == map.end()) return fallback;
-  const auto* value = std::get_if<std::string>(&it->second);
+  if (it == map.end())
+    return fallback;
+  const auto *value = std::get_if<std::string>(&it->second);
   return value == nullptr ? fallback : *value;
 }
 
-}  // namespace
+} // namespace
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
+FlutterWindow::FlutterWindow(const flutter::DartProject &project)
     : project_(project) {}
 
 FlutterWindow::~FlutterWindow() {}
 
 void FlutterWindow::SetPendingOpenPaths(std::vector<std::string> paths) {
-  for (auto& p : paths) {
+  for (auto &p : paths) {
     pending_paths_.push_back(std::move(p));
   }
 }
@@ -85,9 +89,7 @@ bool FlutterWindow::OnCreate() {
         reinterpret_cast<LONG_PTR>(&FlutterWindow::ViewProc)));
   }
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
-  });
+  flutter_controller_->engine()->SetNextFrameCallback([&]() { this->Show(); });
 
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
@@ -134,10 +136,10 @@ void FlutterWindow::InstallChannelHandler() {
       &flutter::StandardMethodCodec::GetInstance());
 
   channel_->SetMethodCallHandler(
-      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+      [this](const flutter::MethodCall<flutter::EncodableValue> &call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
-        const std::string& method = call.method_name();
+        const std::string &method = call.method_name();
 
         // Dart 说「通道接好了，可以送文件了」。
         if (method == "ready") {
@@ -149,18 +151,21 @@ void FlutterWindow::InstallChannelHandler() {
 
         // Dart 报上来的界面状态：窗口标题、菜单项的灰/亮与勾选。
         if (method == "shellState") {
-          const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+          const auto *args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
           if (args != nullptr) {
             pdscope_shell::MenuState state;
             state.has_document = ReadBool(*args, "hasDoc", state.has_document);
-            state.filters_shown = ReadBool(*args, "filters", state.filters_shown);
+            state.filters_shown =
+                ReadBool(*args, "filters", state.filters_shown);
             state.detail_shown = ReadBool(*args, "detail", state.detail_shown);
             pdscope_shell::ApplyMenuState(GetHandle(), menu_, state);
 
             // 标题带上当前抓包：任务栏与 Alt+Tab 里才看得出开着哪一份。
             const std::string title = ReadString(*args, "title", std::string());
             if (!title.empty()) {
-              ::SetWindowTextW(GetHandle(), pdscope_shell::Utf8ToWide(title).c_str());
+              ::SetWindowTextW(GetHandle(),
+                               pdscope_shell::Utf8ToWide(title).c_str());
             }
           }
           result->Success();
@@ -174,7 +179,8 @@ void FlutterWindow::InstallChannelHandler() {
 LRESULT
 FlutterWindow::ViewProc(HWND window, UINT const message, WPARAM const wparam,
                         LPARAM const lparam) noexcept {
-  auto* self = reinterpret_cast<FlutterWindow*>(::GetPropW(window, kOwnerProp));
+  auto *self =
+      reinterpret_cast<FlutterWindow *>(::GetPropW(window, kOwnerProp));
 
   if (message == WM_DROPFILES) {
     if (self != nullptr) {
@@ -196,51 +202,83 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  // 外壳自己的消息先处理：这三个跟 Flutter 处理的那批（键鼠、尺寸、DPI）不相交。
+  // 外壳自己的消息先处理：这三个跟 Flutter
+  // 处理的那批（键鼠、尺寸、DPI）不相交。
   switch (message) {
-    case WM_DROPFILES:
-      HandleDrop(reinterpret_cast<HDROP>(wparam));
+  case WM_CLOSE:
+    if (!close_allowed_ && dart_ready_ && channel_) {
+      if (!close_pending_) {
+        close_pending_ = true;
+        // 回调仅持有 HWND；窗口或引擎先退出时不会访问已释放的 this。
+        const HWND window = GetHandle();
+        channel_->InvokeMethod(
+            "requestClose", nullptr,
+            std::make_unique<
+                flutter::MethodResultFunctions<flutter::EncodableValue>>(
+                [window](const flutter::EncodableValue *) {
+                  ::PostMessageW(window, WM_APP + 7, 1, 0);
+                },
+                [window](const std::string &, const std::string &,
+                         const flutter::EncodableValue *) {
+                  ::PostMessageW(window, WM_APP + 7, 0, 0);
+                },
+                [window]() { ::PostMessageW(window, WM_APP + 7, 1, 0); }));
+      }
       return 0;
-
-    case WM_COPYDATA: {
-      std::vector<std::string> paths;
-      if (pdscope_shell::PathsFromCopyData(
-              reinterpret_cast<const COPYDATASTRUCT*>(lparam), &paths)) {
-        SendPaths(paths);
-        return TRUE;
-      }
-      break;
     }
+    break;
 
-    case WM_COMMAND: {
-      const int id = LOWORD(wparam);
-      if (id >= pdscope_shell::kMenuOpen && id <= pdscope_shell::kMenuExit) {
-        HandleMenuCommand(id);
-        return 0;
-      }
-      break;
+  case WM_APP + 7:
+    close_pending_ = false;
+    if (wparam != 0) {
+      close_allowed_ = true;
+      ::PostMessageW(GetHandle(), WM_CLOSE, 0, 0);
     }
+    return 0;
 
-    default:
-      break;
+  case WM_DROPFILES:
+    HandleDrop(reinterpret_cast<HDROP>(wparam));
+    return 0;
+
+  case WM_COPYDATA: {
+    std::vector<std::string> paths;
+    if (pdscope_shell::PathsFromCopyData(
+            reinterpret_cast<const COPYDATASTRUCT *>(lparam), &paths)) {
+      SendPaths(paths);
+      return TRUE;
+    }
+    break;
+  }
+
+  case WM_COMMAND: {
+    const int id = LOWORD(wparam);
+    if (id >= pdscope_shell::kMenuOpen && id <= pdscope_shell::kMenuExit) {
+      HandleMenuCommand(id);
+      return 0;
+    }
+    break;
+  }
+
+  default:
+    break;
   }
 
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
-                                                     lparam);
+                                                      lparam);
     if (result) {
       return *result;
     }
   }
 
   switch (message) {
-    case WM_FONTCHANGE:
-      if (flutter_controller_) {
-        flutter_controller_->engine()->ReloadSystemFonts();
-      }
-      break;
+  case WM_FONTCHANGE:
+    if (flutter_controller_) {
+      flutter_controller_->engine()->ReloadSystemFonts();
+    }
+    break;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
@@ -258,62 +296,64 @@ void FlutterWindow::HandleMenuCommand(int id) {
     return;
   }
 
-  const char* command = nullptr;
+  const char *command = nullptr;
   switch (id) {
-    case pdscope_shell::kMenuOpen:
-      command = "openFile";
-      break;
-    case pdscope_shell::kMenuConnect:
-      command = "connectDevice";
-      break;
-    case pdscope_shell::kMenuClose:
-      command = "closeCurrent";
-      break;
-    case pdscope_shell::kMenuCloseAll:
-      command = "closeAll";
-      break;
-    case pdscope_shell::kMenuExportCsv:
-      command = "exportCsv";
-      break;
-    case pdscope_shell::kMenuExportJson:
-      command = "exportJson";
-      break;
-    case pdscope_shell::kMenuSearch:
-      command = "search";
-      break;
-    case pdscope_shell::kMenuDense:
-      command = "toggleDense";
-      break;
-    case pdscope_shell::kMenuToggleTheme:
-      command = "toggleTheme";
-      break;
-    case pdscope_shell::kMenuToggleFilters:
-      command = "toggleFilters";
-      break;
-    case pdscope_shell::kMenuToggleDetail:
-      command = "toggleDetail";
-      break;
-    case pdscope_shell::kMenuResetLayout:
-      command = "resetLayout";
-      break;
-    case pdscope_shell::kMenuAbout:
-      command = "about";
-      break;
-    default:
-      return;
+  case pdscope_shell::kMenuOpen:
+    command = "openFile";
+    break;
+  case pdscope_shell::kMenuConnect:
+    command = "connectDevice";
+    break;
+  case pdscope_shell::kMenuClose:
+    command = "closeCurrent";
+    break;
+  case pdscope_shell::kMenuCloseAll:
+    command = "closeAll";
+    break;
+  case pdscope_shell::kMenuExportCsv:
+    command = "exportCsv";
+    break;
+  case pdscope_shell::kMenuExportJson:
+    command = "exportJson";
+    break;
+  case pdscope_shell::kMenuSearch:
+    command = "search";
+    break;
+  case pdscope_shell::kMenuDense:
+    command = "toggleDense";
+    break;
+  case pdscope_shell::kMenuToggleTheme:
+    command = "toggleTheme";
+    break;
+  case pdscope_shell::kMenuToggleFilters:
+    command = "toggleFilters";
+    break;
+  case pdscope_shell::kMenuToggleDetail:
+    command = "toggleDetail";
+    break;
+  case pdscope_shell::kMenuResetLayout:
+    command = "resetLayout";
+    break;
+  case pdscope_shell::kMenuAbout:
+    command = "about";
+    break;
+  default:
+    return;
   }
 
-  if (!channel_) return;
-  channel_->InvokeMethod(
-      "command", std::make_unique<flutter::EncodableValue>(std::string(command)));
+  if (!channel_)
+    return;
+  channel_->InvokeMethod("command", std::make_unique<flutter::EncodableValue>(
+                                        std::string(command)));
 }
 
-void FlutterWindow::SendPaths(const std::vector<std::string>& paths) {
-  if (paths.empty()) return;
+void FlutterWindow::SendPaths(const std::vector<std::string> &paths) {
+  if (paths.empty())
+    return;
 
   // Dart 还没准备好：**攒着，不能丢**。命令行打开时它一定还没准备好。
   if (!dart_ready_ || !channel_) {
-    for (const auto& p : paths) {
+    for (const auto &p : paths) {
       pending_paths_.push_back(p);
     }
     return;
@@ -321,7 +361,7 @@ void FlutterWindow::SendPaths(const std::vector<std::string>& paths) {
 
   flutter::EncodableList list;
   list.reserve(paths.size());
-  for (const auto& p : paths) {
+  for (const auto &p : paths) {
     list.emplace_back(p);
   }
   channel_->InvokeMethod("openFiles",
@@ -329,7 +369,8 @@ void FlutterWindow::SendPaths(const std::vector<std::string>& paths) {
 }
 
 void FlutterWindow::FlushPendingPaths() {
-  if (pending_paths_.empty()) return;
+  if (pending_paths_.empty())
+    return;
   std::vector<std::string> queued;
   queued.swap(pending_paths_);
   SendPaths(queued);

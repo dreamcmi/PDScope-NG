@@ -39,7 +39,7 @@ class SortKey {
 /// 链路一栏的候选（UFCS 是 D+/D-/D±，PD 是 SOP 序列）—— 与 `linkValues()` 同源。
 List<String> linkValues(String protocol) => protocol == 'UFCS'
     ? const ['D+', 'D-', 'D±']
-    : const ['SOP', "SOP'", "SOP''", 'Hard Reset', 'Cable Reset'];
+    : const ['SOP', "SOP'", "SOP''", 'Hard Reset', 'Cable Reset', 'Unknown'];
 
 /// 类别一栏的候选 —— 与 `catValues()` 同源。
 List<String> catValues(String protocol) => protocol == 'UFCS'
@@ -47,7 +47,7 @@ List<String> catValues(String protocol) => protocol == 'UFCS'
     : const ['Control', 'Data', 'Extended', 'VDM', 'Error'];
 
 /// 方向一栏的候选 —— 与 `newFilters()` 的 roles 同源。
-const List<String> roleValues = ['SRC', 'SNK', 'Plug'];
+const List<String> roleValues = ['SRC', 'SNK', 'Plug', 'Unknown'];
 
 /// 链路一栏在界面上的标题（PD 是 SOP，UFCS 是物理链路）。
 String linkTitle(String protocol) => protocol == 'UFCS' ? '链路' : 'SOP';

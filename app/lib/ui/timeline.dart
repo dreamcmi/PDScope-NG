@@ -315,13 +315,13 @@ class _TimelineState extends State<Timeline> {
             .clamp(0.0, 1.0)
             .toDouble();
     final t = fraction * span;
-    final i = ((t - s.t0) / (s.step <= 0 ? 1 : s.step))
-        .round()
-        .clamp(0, math.max(s.n - 1, 0))
-        .toInt();
+    final i = s.nearestIndex(t);
     final parts = <String>[fmtReadout(t, span)];
     if (s.n > 0) {
-      parts.add('${fmtVolt(s.vbus[i])} · ${fmtAmp(s.ibus[i])}');
+      parts.add(
+        '${s.vbus[i].isFinite ? fmtVolt(s.vbus[i]) : '电压未知'} · '
+        '${s.ibus[i].isFinite ? fmtAmp(s.ibus[i]) : '电流未知'}',
+      );
       if (doc.tlMode == TlMode.aux && s.ca != null && s.cb != null) {
         parts.add(
           '${s.ca![i].toStringAsFixed(2)} / ${s.cb![i].toStringAsFixed(2)}',
@@ -506,11 +506,14 @@ class _TimelineState extends State<Timeline> {
                   hoverX: _hoverX,
                   windowFrom: doc.filters.tFrom,
                   windowTo: doc.filters.tTo,
-                  selectedTime:
-                      _followSelected &&
-                          doc.selected != null &&
-                          doc.selected! >= 0 &&
-                          doc.selected! < doc.marks.n
+                  selectedTime: doc.isLive
+                      ? (doc.detail?.row.timeMs.isFinite == true
+                            ? doc.detail!.row.timeMs / 1000
+                            : null)
+                      : _followSelected &&
+                            doc.selected != null &&
+                            doc.selected! >= 0 &&
+                            doc.selected! < doc.marks.n
                       ? doc.marks.ts[doc.selected!]
                       : null,
                 ),
@@ -733,15 +736,20 @@ class _TimelinePainter extends CustomPainter {
       ..isAntiAlias = true;
     final path = Path();
     final n = data.length;
-    final stepX = plot.width / math.max(n - 1, 1);
+    var connected = false;
     for (var i = 0; i < n; i++) {
-      final x = plot.left + stepX * i;
+      if (!data[i].isFinite || span <= 0) {
+        connected = false;
+        continue;
+      }
+      final x = plot.left + series.timeAt(i) / span * plot.width;
       final y = yFor(data[i]);
-      if (i == 0) {
+      if (!connected) {
         path.moveTo(x, y);
       } else {
         path.lineTo(x, y);
       }
+      connected = true;
     }
     canvas.drawPath(path, paint);
   }

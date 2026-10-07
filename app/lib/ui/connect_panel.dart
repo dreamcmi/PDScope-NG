@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../core/document.dart';
 import '../core/live_source.dart';
+import '../core/pcl_live_source.dart';
 import '../core/palette.dart';
 import 'filter_panel.dart' show MiniSwitch;
 
@@ -27,14 +28,28 @@ class ConnectPanel extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 18),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 640),
-            child: switch (doc.liveState) {
-              LiveState.idle => _idle(context),
-              LiveState.scanning => _scanning(context),
-              LiveState.found => _devices(context),
-              LiveState.connecting => _devices(context),
-              LiveState.listening => _listening(context),
-              _ => _ready(context),
-            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (doc.liveMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      doc.liveMessage!,
+                      style: TextStyle(color: p.warn, fontSize: 12),
+                    ),
+                  ),
+                switch (doc.liveState) {
+                  LiveState.idle => _idle(context),
+                  LiveState.scanning => _scanning(context),
+                  LiveState.found => _devices(context),
+                  LiveState.connecting => _devices(context),
+                  LiveState.listening => _listening(context),
+                  LiveState.recoverableError => _devices(context),
+                  _ => _ready(context),
+                },
+              ],
+            ),
           ),
         ),
       ),
@@ -82,7 +97,10 @@ class ConnectPanel extends StatelessWidget {
             SizedBox(
               width: 10,
               height: 10,
-              child: CircularProgressIndicator(strokeWidth: 1.6, color: p.accent),
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                color: p.accent,
+              ),
             ),
             const SizedBox(width: 7),
             Text('正在查找设备…', style: TextStyle(fontSize: 11.5, color: p.tx2)),
@@ -123,7 +141,9 @@ class ConnectPanel extends StatelessWidget {
         Row(
           children: [
             TextButton(
-              onPressed: busy ? null : () => doc.liveEnumerate(),
+              onPressed: busy || doc.liveBusy
+                  ? null
+                  : () => doc.liveEnumerate(),
               child: const Text('重新查找'),
             ),
           ],
@@ -183,9 +203,7 @@ class ConnectPanel extends StatelessWidget {
                   Wrap(
                     spacing: 5,
                     runSpacing: 5,
-                    children: [
-                      for (final c in d.capabilities) _capBadge(p, c),
-                    ],
+                    children: [for (final c in d.capabilities) _capBadge(p, c)],
                   ),
                 ],
               ),
@@ -201,9 +219,23 @@ class ConnectPanel extends StatelessWidget {
                 ),
               )
             else
-              OutlinedButton(
-                onPressed: busy ? null : () => doc.liveConnect(d),
-                child: Text(selected ? '已选中' : '连接'),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton(
+                    onPressed: busy || doc.liveBusy
+                        ? null
+                        : () => doc.liveConnect(d),
+                    child: const Text('连接'),
+                  ),
+                  if (doc.liveSource is PclLiveSource)
+                    TextButton(
+                      onPressed: doc.liveBusy
+                          ? null
+                          : () => doc.liveListenDevice(d, 3000),
+                      child: const Text('零写监听'),
+                    ),
+                ],
               ),
           ],
         ),
@@ -229,13 +261,17 @@ class ConnectPanel extends StatelessWidget {
         border: Border.all(color: fg.withValues(alpha: 0.35)),
       ),
       child: Text(
-        c.state == LiveCapState.yes ? c.label : '${c.label} · ${_stateWord(c.state)}',
-        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: fg),
+        c.state == LiveCapState.yes
+            ? c.label
+            : '${c.label} · ${_stateWord(c.state)}',
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: fg,
+        ),
       ),
     );
-    return c.reason == null
-        ? badge
-        : Tooltip(message: c.reason!, child: badge);
+    return c.reason == null ? badge : Tooltip(message: c.reason!, child: badge);
   }
 
   static String _stateWord(LiveCapState s) => switch (s) {
@@ -360,28 +396,85 @@ class ConnectPanel extends StatelessWidget {
 
         const SizedBox(height: 16),
         _sectionTitle(p, '采集配置', null),
-        _switchRow(p, 'PD 报文', o.pd, (v) => _setOpt(pd: v)),
         _switchRow(
           p,
-          '母线电压 / 电流',
-          o.analog,
-          (v) => _setOpt(analog: v),
-          hint: '时间轴的主副曲线靠它',
+          'PD 报文',
+          o.pd,
+          (v) => _setOpt(pd: v),
+          enabled: mock && !doc.liveBusy,
+          hint: mock ? null : '当前页面采集 PD 解码包，包含原始线上 CRC',
         ),
-        _switchRow(
-          p,
-          '高速采样流',
-          o.highSpeed,
-          (v) => _setOpt(highSpeed: v),
-          enabled: _canHighSpeed(d),
-          hint: _canHighSpeed(d) ? '需要先做一次设备认证' : _whyNoHighSpeed(d),
-        ),
+        if (mock)
+          _switchRow(
+            p,
+            '母线电压 / 电流',
+            o.analog,
+            (v) => _setOpt(analog: v),
+            hint: '时间轴的主副曲线靠它',
+          ),
+        if (mock)
+          _switchRow(
+            p,
+            '高速采样流',
+            o.highSpeed,
+            (v) => _setOpt(highSpeed: v),
+            enabled: _canHighSpeed(d),
+            hint: _canHighSpeed(d) ? '需要先做一次设备认证' : _whyNoHighSpeed(d),
+          ),
+        if (!mock) ...[
+          _switchRow(
+            p,
+            '母线电压',
+            o.voltage,
+            (v) => _setOpt(voltage: v, analog: true),
+            enabled: !doc.liveBusy && d?.can('母线电压') == true,
+            hint: d?.capOf('母线电压')?.reason,
+          ),
+          _switchRow(
+            p,
+            '母线电流',
+            o.current,
+            (v) => _setOpt(current: v, analog: true),
+            enabled: !doc.liveBusy && d?.can('母线电流') == true,
+            hint: d?.capOf('母线电流')?.reason,
+          ),
+          _switchRow(
+            p,
+            'GoodCRC 设备过滤',
+            o.goodCrcFilter,
+            (v) => _setOpt(goodCrcFilter: v),
+            enabled: !doc.liveBusy && d?.can('GoodCRC 过滤') == true,
+            hint: '关闭时保留设备上报的 GoodCRC，表格仍可单独筛选',
+          ),
+          Row(
+            children: [
+              Text('数据通道', style: TextStyle(fontSize: 11, color: p.tx2)),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: o.channelSelect,
+                isDense: true,
+                items: [
+                  const DropdownMenuItem(value: 0, child: Text('自动')),
+                  if (d?.can('CC 选择') == true) ...[
+                    const DropdownMenuItem(value: 1, child: Text('CC1')),
+                    const DropdownMenuItem(value: 2, child: Text('CC2')),
+                  ],
+                  if (d?.can('双 CC 接收') == true)
+                    const DropdownMenuItem(value: 3, child: Text('CC1 + CC2')),
+                ],
+                onChanged: doc.liveBusy
+                    ? null
+                    : (value) => _setOpt(channelSelect: value),
+              ),
+            ],
+          ),
+        ],
 
         const SizedBox(height: 12),
         Row(
           children: [
             Text(
-              '轮询节拍',
+              mock ? '轮询节拍' : 'ADC 最短采样周期',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -390,7 +483,24 @@ class ConnectPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            _rateSegmented(p, o.pollMs, (v) => _setOpt(pollMs: v)),
+            if (mock)
+              _rateSegmented(p, o.pollMs, (v) => _setOpt(pollMs: v))
+            else
+              DropdownButton<int>(
+                value: o.pollMs,
+                isDense: true,
+                items: _periods()
+                    .map(
+                      (period) => DropdownMenuItem(
+                        value: period,
+                        child: Text('$period ms'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: doc.liveBusy || !(o.voltage || o.current)
+                    ? null
+                    : (value) => _setOpt(pollMs: value),
+              ),
           ],
         ),
 
@@ -398,14 +508,30 @@ class ConnectPanel extends StatelessWidget {
         Row(
           children: [
             const Spacer(),
+            if (doc.live?.isEmpty == false)
+              TextButton(
+                onPressed: doc.liveBusy
+                    ? null
+                    : () {
+                        doc.liveShowConfig = false;
+                        doc.touch();
+                      },
+                child: const Text('返回报文'),
+              ),
+            TextButton(
+              onPressed: doc.liveBusy ? null : () => doc.liveDisconnect(),
+              child: const Text('断开设备'),
+            ),
             OutlinedButton(
-              onPressed: () => doc.liveListen(3000),
+              onPressed: doc.liveBusy ? null : () => doc.liveListen(3000),
               child: const Text('零写监听'),
             ),
             const SizedBox(width: 10),
             FilledButton(
-              onPressed: _canStart(o) ? () => doc.liveStart() : null,
-              child: const Text('开始采集'),
+              onPressed: _canStart(o) && !doc.liveBusy
+                  ? () => doc.liveStart()
+                  : null,
+              child: Text(doc.liveBusy ? '等待设备确认…' : '开始采集'),
             ),
           ],
         ),
@@ -469,18 +595,44 @@ class ConnectPanel extends StatelessWidget {
     );
   }
 
-  void _setOpt({bool? pd, bool? analog, bool? highSpeed, int? pollMs}) {
+  List<int> _periods() {
+    final source = doc.liveSource;
+    final minimum = source is PclLiveSource
+        ? source.hello?.minSamplePeriodMs ?? 1
+        : 1;
+    return {
+      ...[20, 50, 100, 200, 1000].where((period) => period >= minimum),
+      minimum.clamp(1, 1000),
+      doc.liveOptions.pollMs,
+    }.toList()..sort();
+  }
+
+  void _setOpt({
+    bool? pd,
+    bool? analog,
+    bool? highSpeed,
+    int? pollMs,
+    bool? voltage,
+    bool? current,
+    bool? goodCrcFilter,
+    int? channelSelect,
+  }) {
     doc.liveOptions = LiveStartOptions(
       pd: pd ?? doc.liveOptions.pd,
       analog: analog ?? doc.liveOptions.analog,
       highSpeed: highSpeed ?? doc.liveOptions.highSpeed,
       pollMs: pollMs ?? doc.liveOptions.pollMs,
+      voltage: voltage ?? doc.liveOptions.voltage,
+      current: current ?? doc.liveOptions.current,
+      goodCrcFilter: goodCrcFilter ?? doc.liveOptions.goodCrcFilter,
+      channelSelect: channelSelect ?? doc.liveOptions.channelSelect,
     );
     doc.touch();
   }
 
-  bool _canStart(LiveStartOptions o) =>
-      o.pd || o.analog || (o.highSpeed && true);
+  bool _canStart(LiveStartOptions o) => doc.liveSource is MockLiveSource
+      ? o.pd || o.analog || o.highSpeed
+      : o.pd && doc.liveDevice?.can('PD 报文') == true;
 
   bool _canHighSpeed(LiveDevice? d) {
     final c = d?.capOf('高速采样流');

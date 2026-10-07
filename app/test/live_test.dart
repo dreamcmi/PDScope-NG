@@ -26,7 +26,10 @@ Future<Workspace> _pumpApp(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1600, 1000);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  final ws = Workspace(Future.value(engine));
+  final ws = Workspace(
+    Future.value(engine),
+    liveSourceFactory: MockLiveSource.new,
+  );
   await tester.pumpWidget(PdScopeApp(workspace: ws));
   await tester.pump();
   return ws;
@@ -96,7 +99,11 @@ void main() {
       final ws = await _pumpApp(tester);
       final live = ws.openLive();
       await tester.pump();
-      final file = CaptureDocument(id: 999, path: r'x\y.atkcc', displayName: 'y.atkcc');
+      final file = CaptureDocument(
+        id: 999,
+        path: r'x\y.atkcc',
+        displayName: 'y.atkcc',
+      );
       ws.docs.add(file);
       await tester.pump();
 
@@ -294,8 +301,19 @@ void main() {
     test('列名与核心 csv.cpp 一致（13 列，PD 用 Objects）', () {
       final s = LiveSession(MockLiveSource());
       expect(LiveSession.csvHeader, [
-        '#', 'SOP', 'MsgType', 'ID', 'Direction',
-        'Objects', 'Elapsed', 'Time(ms)', 'VBUS(V)', 'IBUS(A)', 'Data', 'CRC', 'Note',
+        '#',
+        'SOP',
+        'MsgType',
+        'ID',
+        'Direction',
+        'Objects',
+        'Elapsed',
+        'Time(ms)',
+        'VBUS(V)',
+        'IBUS(A)',
+        'Data',
+        'CRC',
+        'Note',
       ]);
       // 一行都没有时只有表头，且**没有尾换行**（与核心一致）
       final t = s.csvText(filtered: false);
@@ -307,11 +325,26 @@ void main() {
       final s = LiveSession(MockLiveSource());
       s.addRows([
         {
-          'index': 1, 'sop': 'SOP', 'msgType': 'Request', 'role': 'SNK',
-          'msgId': 3, 'objects': 1, 'timeMs': 12.5, 'elapsed': '0.013 s',
-          'startSample': 12, 'endSample': 200, 'vbus': 11.98, 'ibus': 1.8422,
-          'dataHex': '2C 91 12 00', 'crc': 'none', 'summary': 'RDO → PDO#3',
-          'warn': 0, 'channel': 0, 'seq': 1, 'kind': 'Data', 'msgKind': 'data',
+          'index': 1,
+          'sop': 'SOP',
+          'msgType': 'Request',
+          'role': 'SNK',
+          'msgId': 3,
+          'objects': 1,
+          'timeMs': 12.5,
+          'elapsed': '0.013 s',
+          'startSample': 12,
+          'endSample': 200,
+          'vbus': 11.98,
+          'ibus': 1.8422,
+          'dataHex': '2C 91 12 00',
+          'crc': 'none',
+          'summary': 'RDO → PDO#3',
+          'warn': 0,
+          'channel': 0,
+          'seq': 1,
+          'kind': 'Data',
+          'msgKind': 'data',
           'durationUs': 188.0,
         },
       ], {});
@@ -329,11 +362,27 @@ void main() {
     test('视图口径受筛选影响：filtered=true 只导当前视图', () {
       final s = LiveSession(MockLiveSource());
       Map<String, dynamic> row(int i, String type) => {
-        'index': i, 'sop': 'SOP', 'msgType': type, 'role': i.isEven ? 'SRC' : 'SNK',
-        'msgId': 0, 'objects': 0, 'timeMs': i * 1.0, 'elapsed': '0.000 s',
-        'startSample': i, 'endSample': i + 1, 'vbus': 5.0, 'ibus': 0.0,
-        'dataHex': '', 'crc': 'none', 'summary': '', 'warn': 0, 'channel': 0,
-        'seq': i, 'kind': 'Control', 'msgKind': 'control', 'durationUs': 1.0,
+        'index': i,
+        'sop': 'SOP',
+        'msgType': type,
+        'role': i.isEven ? 'SRC' : 'SNK',
+        'msgId': 0,
+        'objects': 0,
+        'timeMs': i * 1.0,
+        'elapsed': '0.000 s',
+        'startSample': i,
+        'endSample': i + 1,
+        'vbus': 5.0,
+        'ibus': 0.0,
+        'dataHex': '',
+        'crc': 'none',
+        'summary': '',
+        'warn': 0,
+        'channel': 0,
+        'seq': i,
+        'kind': 'Control',
+        'msgKind': 'control',
+        'durationUs': 1.0,
       };
       s.addRows([row(1, 'GoodCRC'), row(2, 'Request')], {});
 

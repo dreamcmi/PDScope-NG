@@ -417,7 +417,7 @@ class _PacketTableState extends State<PacketTable> {
         return _wrap(
           Text(
             hasBus
-                ? '${r.vbus.toStringAsFixed(2)} / ${r.ibus.toStringAsFixed(3)}'
+                ? '${r.vbus.isFinite ? r.vbus.toStringAsFixed(2) : '未知'} / ${r.ibus.isFinite ? r.ibus.toStringAsFixed(3) : '未知'}'
                 : '—',
             style: mono.copyWith(color: p.tx2, fontSize: 11),
           ),

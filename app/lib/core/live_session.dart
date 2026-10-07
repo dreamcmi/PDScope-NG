@@ -1,16 +1,16 @@
 // live_session.dart — 实时采集：已采数据的内存持有者与查询入口
 //
 // 为什么要有这一层：文件抓包的「取一页 / 取详情 / 取统计」都是问核心（engine），
-// 而实时采集的数据目前在**界面进程里**（协议层未定）。这里实现同一组方法
+// 而实时采集的数据由设备源解码后保存在界面进程中。这里实现同一组方法
 // （page / detail / typeCounts / marks / busSeries / csv），
 // 让 CaptureDocument 只改「问谁」，不改「怎么用」—— 界面因此不必分两套。
 //
-// ⚠ 两处刻意的镜像，接入真协议时要一并处理（不是遗漏，是当前的取舍）：
-//   · [rebuildView] 是 core/src/filters.cpp 的 Dart 侧镜像。真协议接入后应改成
-//     把实时行喂进核心的 Session，让筛选只剩一份实现。
+// 两处需要与核心保持一致的查询逻辑：
+//   · [rebuildView] 是 core/src/filters.cpp 的 Dart 侧筛选实现。
 //   · [csvText] 是 core/src/csv.cpp 的镜像。列名 / CRLF / 逐字段加引号
 //     **逐条对齐**，否则「采集中导出的文件」与「停止后导出的文件」会长得不一样。
 import 'dart:math' as math;
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'filters.dart';
@@ -23,6 +23,9 @@ import 'models.dart';
 /// [LiveStats.trimmed] 显示出来 —— 悄悄丢历史是不可接受的（原则①）。
 const int kLiveRowCap = 20000;
 
+/// 模拟量历史同样有界，避免长时间采集耗尽上位机内存。
+const int kLiveBusCap = 50000;
+
 class LiveSession {
   LiveSession(this.source);
 
@@ -34,16 +37,15 @@ class LiveSession {
   String transportNote = '';
 
   final LiveStats stats = LiveStats();
+  int crcUnknown = 0;
+  int badCrc = 0;
+  int trimmedSamples = 0;
 
   /// 环形通讯日志（最近 [kLiveTraceMax] 条）。
   final List<LiveTraceEntry> trace = [];
 
   final List<Map<String, dynamic>> _rows = [];
   final Map<int, Map<String, dynamic>> _details = {};
-
-  /// `_rows[0]` 对应的原始序号。裁掉历史后它会往后走 ——
-  /// 详情是按**原始序号**取的，所以必须留着这个基准去换算位置。
-  int _base = 0;
 
   final List<double> _bt = [];
   final List<double> _bv = [];
@@ -59,19 +61,24 @@ class LiveSession {
 
   /* ── 追加 ─────────────────────────────────────────────────── */
 
-  void addRows(List<Map<String, dynamic>> rows, Map<int, Map<String, dynamic>> details) {
+  void addRows(
+    List<Map<String, dynamic>> rows,
+    Map<int, Map<String, dynamic>> details,
+  ) {
     if (rows.isEmpty) return;
     _rows.addAll(rows);
     _details.addAll(details);
+    for (final row in rows) {
+      if (row['crc'] == 'bad') badCrc++;
+      if (row['crc'] != 'ok' && row['crc'] != 'bad') crcUnknown++;
+    }
     stats.packets = _rows.length + stats.trimmed;
     // 超出上限就从头裁，并把裁掉的条数如实记下来
     final over = _rows.length - kLiveRowCap;
     if (over > 0) {
       _rows.removeRange(0, over);
-      for (var i = _base; i < _base + over; i++) {
-        _details.remove(i);
-      }
-      _base += over;
+      final first = (_rows.first['index'] as num).toInt();
+      _details.removeWhere((index, _) => index < first);
       stats.trimmed += over;
     }
   }
@@ -82,12 +89,21 @@ class LiveSession {
       _bv.add(vbus[i]);
       _bi.add(ibus[i]);
     }
-    stats.samples = _bt.length;
+    stats.samples += t.length;
+    final over = _bt.length - kLiveBusCap;
+    if (over > 0) {
+      _bt.removeRange(0, over);
+      _bv.removeRange(0, over);
+      _bi.removeRange(0, over);
+      trimmedSamples += over;
+    }
   }
 
   void addTrace(LiveTraceEntry e) {
     trace.add(e);
-    if (trace.length > kLiveTraceMax) trace.removeRange(0, trace.length - kLiveTraceMax);
+    if (trace.length > kLiveTraceMax) {
+      trace.removeRange(0, trace.length - kLiveTraceMax);
+    }
   }
 
   void clear() {
@@ -97,9 +113,11 @@ class LiveSession {
     _bv.clear();
     _bi.clear();
     _view = [];
-    _base = 0;
     trace.clear();
     stats.reset();
+    crcUnknown = 0;
+    badCrc = 0;
+    trimmedSamples = 0;
   }
 
   /* ── 视图：core/src/filters.cpp 的 Dart 侧镜像 ─────────────── */
@@ -137,15 +155,18 @@ class LiveSession {
     if (f.onlyEnter && !s('msgType').contains('Mode')) return false;
 
     if (f.hasTimeWindow && total > 0) {
-      final frac = ((r['startSample'] as num?)?.toDouble() ?? 0) / (total * 1000);
+      if (r['timeUncertain'] == true) return false;
+      final frac =
+          ((r['startSample'] as num?)?.toDouble() ?? 0) / (total * 1000);
       if (frac < f.tFrom || frac > f.tTo) return false;
     }
 
     // 全文：与核心一样，在类型 + 摘要 + 数据 + 链路 + 方向里找，不区分大小写
     if (f.q.trim().isNotEmpty) {
       final q = f.q.trim().toLowerCase();
-      final hay = '${s('msgType')} ${s('summary')} ${s('dataHex')} ${s('sop')} ${s('role')}'
-          .toLowerCase();
+      final hay =
+          '${s('msgType')} ${s('summary')} ${s('dataHex')} ${s('sop')} ${s('role')}'
+              .toLowerCase();
       if (!hay.contains(q)) return false;
     }
 
@@ -166,38 +187,54 @@ class LiveSession {
       int c;
       switch (f.sortKey) {
         case SortKey.msgType:
-          c = ((ra['msgType'] ?? '') as String).compareTo((rb['msgType'] ?? '') as String);
+          c = ((ra['msgType'] ?? '') as String).compareTo(
+            (rb['msgType'] ?? '') as String,
+          );
         case SortKey.sop:
-          c = ((ra['sop'] ?? '') as String).compareTo((rb['sop'] ?? '') as String);
+          c = ((ra['sop'] ?? '') as String).compareTo(
+            (rb['sop'] ?? '') as String,
+          );
         case SortKey.role:
-          c = ((ra['role'] ?? '') as String).compareTo((rb['role'] ?? '') as String);
+          c = ((ra['role'] ?? '') as String).compareTo(
+            (rb['role'] ?? '') as String,
+          );
         case SortKey.kind:
-          c = ((ra['kind'] ?? '') as String).compareTo((rb['kind'] ?? '') as String);
+          c = ((ra['kind'] ?? '') as String).compareTo(
+            (rb['kind'] ?? '') as String,
+          );
         case SortKey.summary:
-          c = ((ra['summary'] ?? '') as String).compareTo((rb['summary'] ?? '') as String);
+          c = ((ra['summary'] ?? '') as String).compareTo(
+            (rb['summary'] ?? '') as String,
+          );
         case SortKey.msgId:
-          c = ((ra['msgId'] as num?)?.toInt() ?? -1)
-              .compareTo((rb['msgId'] as num?)?.toInt() ?? -1);
+          c = ((ra['msgId'] as num?)?.toInt() ?? -1).compareTo(
+            (rb['msgId'] as num?)?.toInt() ?? -1,
+          );
         case SortKey.nObjects:
-          c = ((ra['objects'] as num?)?.toInt() ?? -1)
-              .compareTo((rb['objects'] as num?)?.toInt() ?? -1);
+          c = ((ra['objects'] as num?)?.toInt() ?? -1).compareTo(
+            (rb['objects'] as num?)?.toInt() ?? -1,
+          );
         case SortKey.durationUs:
-          c = ((ra['durationUs'] as num?)?.toDouble() ?? 0)
-              .compareTo((rb['durationUs'] as num?)?.toDouble() ?? 0);
+          c = ((ra['durationUs'] as num?)?.toDouble() ?? 0).compareTo(
+            (rb['durationUs'] as num?)?.toDouble() ?? 0,
+          );
         case SortKey.crcOk:
           c = _crcRank(ra).compareTo(_crcRank(rb));
         case SortKey.startSample:
         case SortKey.timeMs:
-          c = ((ra['timeMs'] as num?)?.toDouble() ?? 0)
-              .compareTo((rb['timeMs'] as num?)?.toDouble() ?? 0);
+          c = ((ra['timeMs'] as num?)?.toDouble() ?? 0).compareTo(
+            (rb['timeMs'] as num?)?.toDouble() ?? 0,
+          );
         default:
-          c = ((ra['index'] as num?)?.toInt() ?? 0)
-              .compareTo((rb['index'] as num?)?.toInt() ?? 0);
+          c = ((ra['index'] as num?)?.toInt() ?? 0).compareTo(
+            (rb['index'] as num?)?.toInt() ?? 0,
+          );
       }
       // 同值时按原始序号定序，保证排序是稳定的（核心用 std::stable_sort）
       if (c == 0) {
-        c = ((ra['index'] as num?)?.toInt() ?? 0)
-            .compareTo((rb['index'] as num?)?.toInt() ?? 0);
+        c = ((ra['index'] as num?)?.toInt() ?? 0).compareTo(
+          (rb['index'] as num?)?.toInt() ?? 0,
+        );
       }
       return f.sortAsc ? c : -c;
     }
@@ -236,9 +273,7 @@ class LiveSession {
   List<Map<String, dynamic>> page(int offset, int limit) {
     if (offset >= _view.length) return const [];
     final end = math.min(offset + limit, _view.length);
-    return [
-      for (var i = offset; i < end; i++) _rows[_view[i]],
-    ];
+    return [for (var i = offset; i < end; i++) _rows[_view[i]]];
   }
 
   /// 按**原始序号**取详情。
@@ -258,19 +293,35 @@ class LiveSession {
 
   /// 时间轴标记（全部报文，不跟筛选走）—— 布局见 pdscope.h 的 packet_marks。
   PacketMarks marks() {
-    final n = _rows.length;
+    final timed = _rows.where((row) => row['timeUncertain'] != true).toList();
+    final n = timed.length;
     if (n == 0) return PacketMarks.empty;
     final ts = Float64List(n);
     final kind = Uint8List(n);
     final flags = Uint8List(n);
-    // 配对的确认对象：紧随其后的那条 GoodCRC 确认的就是它
+    // 仅将同通道、同 SOP、相同 MessageID 的有效 GoodCRC 标记为确认。
     for (var i = 0; i < n; i++) {
-      final r = _rows[i];
+      final r = timed[i];
       ts[i] = ((r['timeMs'] as num?)?.toDouble() ?? 0) / 1000;
       kind[i] = _kindCode((r['kind'] ?? '') as String);
       var f = 0;
       if ((r['crc'] ?? '') == 'bad') f |= 1;
-      if (i + 1 < n && (_rows[i + 1]['msgType'] ?? '') == 'GoodCRC') f |= 2;
+      if (i + 1 < n) {
+        final ack = timed[i + 1];
+        if (ack['msgType'] == 'GoodCRC' &&
+            ack['crc'] == 'ok' &&
+            r['crc'] == 'ok' &&
+            r['msgType'] != 'GoodCRC' &&
+            r['msgId'] != null &&
+            r['msgId'] == ack['msgId'] &&
+            r['channel'] == ack['channel'] &&
+            r['sop'] == ack['sop'] &&
+            r['role'] != 'Unknown' &&
+            ack['role'] != 'Unknown' &&
+            r['role'] != ack['role']) {
+          f |= 2;
+        }
+      }
       flags[i] = f;
     }
     return PacketMarks(n, ts, kind, flags);
@@ -311,12 +362,13 @@ class LiveSession {
       outT.add(_bt[i]);
       outV.add(_bv[i]);
       outI.add(_bi[i]);
-      vmax = math.max(vmax, _bv[i]);
-      imax = math.max(imax, _bi[i]);
+      if (_bv[i].isFinite) vmax = math.max(vmax, _bv[i]);
+      if (_bi[i].isFinite) imax = math.max(imax, _bi[i]);
     }
     return {
       't0': outT.isEmpty ? 0.0 : outT.first,
-      'step': step * ((_bt.length > 1) ? (_bt[1] - _bt[0]) : 0.125),
+      'step': 0.0,
+      'times': outT,
       'n': outV.length,
       'sampleRate': 0.0,
       'hasAux': false,
@@ -336,8 +388,19 @@ class LiveSession {
 
   /// 与核心完全相同的 13 列。PD 与 UFCS 只差第 6 列（Objects / Bytes）。
   static const List<String> csvHeader = [
-    '#', 'SOP', 'MsgType', 'ID', 'Direction',
-    'Objects', 'Elapsed', 'Time(ms)', 'VBUS(V)', 'IBUS(A)', 'Data', 'CRC', 'Note',
+    '#',
+    'SOP',
+    'MsgType',
+    'ID',
+    'Direction',
+    'Objects',
+    'Elapsed',
+    'Time(ms)',
+    'VBUS(V)',
+    'IBUS(A)',
+    'Data',
+    'CRC',
+    'Note',
   ];
 
   String csvText({required bool filtered, int limit = 0}) {
@@ -348,17 +411,26 @@ class LiveSession {
     for (var k = 0; k < n; k++) {
       final r = _rows[idx[k]];
       String s(String key) => ((r[key] ?? '') as Object).toString();
+      String measurement(String key, int digits) {
+        final value = (r[key] as num?)?.toDouble();
+        return value == null || !value.isFinite
+            ? ''
+            : value.toStringAsFixed(digits);
+      }
+
       final cells = <String>[
         s('index'),
         s('sop'),
         s('msgType'),
         r['msgId'] == null ? '' : s('msgId'),
         s('role'),
-        r['objects'] == null ? (r['bytes'] == null ? '' : s('bytes')) : s('objects'),
+        r['objects'] == null
+            ? (r['bytes'] == null ? '' : s('bytes'))
+            : s('objects'),
         s('elapsed'),
-        ((r['timeMs'] as num?)?.toDouble() ?? 0).toStringAsFixed(3),
-        ((r['vbus'] as num?)?.toDouble() ?? 0).toStringAsFixed(2),
-        ((r['ibus'] as num?)?.toDouble() ?? 0).toStringAsFixed(3),
+        measurement('timeMs', 3),
+        measurement('vbus', 2),
+        measurement('ibus', 3),
         s('dataHex'),
         _crcCell((r['crc'] ?? '') as String),
         s('summary'),
@@ -369,6 +441,46 @@ class LiveSession {
     }
     return b.toString();
   }
+
+  /// 导出当前保留的全部原始详情；与 CSV 的视图口径分别明确标注。
+  String jsonText() => const JsonEncoder.withIndent('  ').convert({
+    'format': 'PDScope live capture',
+    'protocol': 'USB PD',
+    'device': deviceName,
+    'transport': transport,
+    'transportNote': transportNote,
+    'durationSec': stats.durationSec,
+    'receivedPackets': stats.packets,
+    'retainedPackets': _rows.length,
+    'trimmedPackets': stats.trimmed,
+    'trimmedSamples': trimmedSamples,
+    'lossCountKnown': stats.lossCountKnown,
+    'lossReports': stats.lossReports,
+    'timeUncertain': stats.timeUncertain,
+    'sequenceGaps': stats.sequenceGaps,
+    'invalidFrames': stats.invalidFrames,
+    'packets': _rows
+        .map((row) => _details[(row['index'] as num).toInt()] ?? row)
+        .toList(),
+    'measurements': List.generate(
+      _bt.length,
+      (i) => {
+        'timeSec': _bt[i],
+        'voltage': _bv[i].isFinite ? _bv[i] : null,
+        'current': _bi[i].isFinite ? _bi[i] : null,
+      },
+    ),
+    'trace': trace
+        .map(
+          (entry) => {
+            'hostMs': entry.ms,
+            'tx': entry.tx,
+            'bytes': entry.bytes,
+            'note': entry.note,
+          },
+        )
+        .toList(),
+  });
 
   /// CRC 三态里「未记录」必须留空 —— 不能替设备的数据背书。
   static String _crcCell(String crc) => switch (crc) {

@@ -157,6 +157,24 @@ class DetailPanel extends StatelessWidget {
         ],
         if (d.text.isNotEmpty)
           SliverToBoxAdapter(child: _textBlock(context, p, '解析', d.text)),
+        if (d.pdFlags != null)
+          SliverToBoxAdapter(
+            child: _textBlock(
+              context,
+              p,
+              'PCL 原始解码字节（头 / 正文 / 线上 CRC）',
+              d.rawPayload.isEmpty
+                  ? 'Reset，无 payload'
+                  : d.rawPayload
+                        .map(
+                          (value) => value
+                              .toRadixString(16)
+                              .padLeft(2, '0')
+                              .toUpperCase(),
+                        )
+                        .join(' '),
+            ),
+          ),
         if (d.warnings.isNotEmpty)
           SliverToBoxAdapter(child: _warnings(context, p, d.warnings)),
         const SliverToBoxAdapter(child: SizedBox(height: 20)),
@@ -171,8 +189,8 @@ class DetailPanel extends StatelessWidget {
       ('方向', r.role + (d.roleInferred ? '（推断）' : '')),
       ('链路', d.link.isEmpty ? r.sop : d.link),
       ('类别', d.category.isEmpty ? r.kind : d.category),
-      ('VBUS', '${r.vbus.toStringAsFixed(3)} V'),
-      ('IBUS', '${r.ibus.toStringAsFixed(3)} A'),
+      ('VBUS', r.vbus.isFinite ? '${r.vbus.toStringAsFixed(3)} V' : '未知'),
+      ('IBUS', r.ibus.isFinite ? '${r.ibus.toStringAsFixed(3)} A' : '未知'),
       (
         doc.isUfcs ? '数据长度' : '数据对象',
         doc.isUfcs ? '${r.bytes ?? 0} B' : '${r.objects ?? 0}',
@@ -185,12 +203,32 @@ class DetailPanel extends StatelessWidget {
         '#${r.ackOf}${r.ackType == null ? '' : ' · ${r.ackType}'}',
       ));
     }
-    rows.add(('时间', '${r.elapsed}（${r.timeMs.toStringAsFixed(3)} ms）'));
-    rows.add(('采样区间', '${r.startSample} … ${r.endSample}'));
+    if (d.pdFlags != null) {
+      rows.add((
+        '设备 CRC 结论',
+        (d.pdFlags! & 1) != 0
+            ? '失败'
+            : (d.pdFlags! & 2) != 0
+            ? '未知'
+            : '通过',
+      ));
+    }
+    rows.add((
+      '时间',
+      r.timeUncertain
+          ? '连续性不确定'
+          : '${r.elapsed}（${r.timeMs.toStringAsFixed(3)} ms）',
+    ));
+    if (d.elapsedTicks != null) rows.add(('设备原始刻度', '${d.elapsedTicks}'));
+    if (d.pdFlags == null) {
+      rows.add(('采样区间', '${r.startSample} … ${r.endSample}'));
+    }
     rows.add((
       d.synthetic ? '线上时长' : '报文时长',
-      '${(r.durationUs / 1000).toStringAsFixed(3)} ms'
-          '${d.synthetic ? '（按 600 kbps 标称时钟折算）' : ''}',
+      r.durationUs.isFinite
+          ? '${(r.durationUs / 1000).toStringAsFixed(3)} ms'
+                '${d.synthetic ? '（按 600 kbps 标称时钟折算）' : ''}'
+          : '未记录',
     ));
 
     return Container(
@@ -469,6 +507,10 @@ class DetailPanel extends StatelessWidget {
   /// CRC 是**三态**：通过 / 失败 / 未记录。未记录不能写成「通过」。
   String _crcText(PacketDetail d) {
     final rec = d.row.crc;
+    if (d.pdFlags != null && rec == 'none') {
+      if (d.crcValue == null) return '无法校验（未保留完整 CRC 字节）';
+      return '设备结论未知；原始 CRC 0x${d.crcValue!.toRadixString(16).toUpperCase()}';
+    }
     if (rec == 'none') {
       return '未记录（重算 0x${d.crcCalc.toRadixString(16).toUpperCase()}）';
     }

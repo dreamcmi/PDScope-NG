@@ -8,6 +8,7 @@
 //   · 详情收起后右缘必须留一条**不依赖数据**的竖栏，否则「一行报文都没有」的抓包
 //     一旦收起面板就再也打不开了。
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -95,6 +96,7 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  AppLifecycleListener? _lifecycle;
   final searchFocus = FocusNode();
 
   /// 外壳命令的订阅。原生菜单点一下就从这里进来 ——
@@ -110,6 +112,12 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(
+      onExitRequested: () async {
+        await ws.closeAll();
+        return AppExitResponse.exit;
+      },
+    );
     _unlistenShell = ShellBridge.commands.listen(_runShellCommand);
     // 菜单的灰/亮与勾选跟着界面走：外壳看不见 widget 树，只能由这边报。
     ws.addListener(_reportShellState);
@@ -129,6 +137,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    _lifecycle?.dispose();
     _unlistenShell?.call();
     ws.removeListener(_reportShellState);
     ws.prefs.removeListener(_reportShellState);
@@ -337,7 +346,10 @@ class _AppShellState extends State<AppShell> {
   ///
   /// 顶层函数而不是 _AppShellState 的方法：状态条的按钮、底部区的头部
   /// 都要能调到它，而 _Body 是无状态组件，拿不到外层的 State。
-  static Future<void> _exportTrace(BuildContext context, CaptureDocument doc) async {
+  static Future<void> _exportTrace(
+    BuildContext context,
+    CaptureDocument doc,
+  ) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     final l = doc.live;
     if (l == null || l.trace.isEmpty) {
@@ -346,11 +358,14 @@ class _AppShellState extends State<AppShell> {
     }
     final b = StringBuffer('时间(ms)\t方向\t字节\t说明\n');
     for (final e in l.trace) {
-      b.write('${e.ms.toStringAsFixed(3)}\t${e.tx ? 'TX' : 'RX'}\t${e.bytes}\t${e.note}\n');
+      b.write(
+        '${e.ms.toStringAsFixed(3)}\t${e.tx ? 'TX' : 'RX'}\t${e.bytes}\t${e.note}\n',
+      );
     }
     final path = await saveTextAs(
       text: b.toString(),
-      suggestedName: '通讯日志-${doc.liveCsvName().replaceAll(RegExp(r'\.csv$'), '')}.txt',
+      suggestedName:
+          '通讯日志-${doc.liveCsvName().replaceAll(RegExp(r'\.csv$'), '')}.txt',
       extension: 'txt',
       typeLabel: '文本',
     );
@@ -462,8 +477,7 @@ class _Body extends StatelessWidget {
                 if (d.notice != null) _NoticeBar(text: d.notice!),
                 // 停车 / 掉线：横幅而不是弹窗 —— 弹窗会遮住表格，
                 // 而此刻用户最想做的恰恰是去看那些已经采到的报文。
-                if (d.liveState == LiveState.parked)
-                  _LiveStopBanner(doc: d),
+                if (d.liveState == LiveState.parked) _LiveStopBanner(doc: d),
                 if (d.liveState == LiveState.disconnected)
                   _LiveDropoutBanner(doc: d),
                 Expanded(
@@ -494,7 +508,8 @@ class _Body extends StatelessWidget {
                               d.touch();
                             },
                           ),
-                          onExport: () => _AppShellState._exportTrace(context, d),
+                          onExport: () =>
+                              _AppShellState._exportTrace(context, d),
                           onClear: () {
                             d.live?.trace.clear();
                             d.touch();
@@ -712,7 +727,6 @@ class _LiveDropoutBanner extends StatelessWidget {
     icon: Icons.usb_off,
     tail: '重新连接请先「重新查找」。',
   );
-
 }
 
 Widget _liveBanner(
@@ -834,9 +848,7 @@ class _StatusBar extends StatelessWidget {
       // 换成设备与传输方式，那才是这份数据真正的来源。
       if (d!.isLive) {
         final dev = d.liveDevice;
-        parts.add(
-          dev == null ? '实时采集' : '设备 ${dev.name} · ${dev.transport}',
-        );
+        parts.add(dev == null ? '实时采集' : '设备 ${dev.name} · ${dev.transport}');
       } else {
         parts.add('文件 ${d.meta!.fileBytes} 字节');
       }

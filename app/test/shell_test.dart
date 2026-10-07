@@ -15,10 +15,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdscope_app/core/document.dart';
 import 'package:pdscope_app/core/engine.dart';
+import 'package:pdscope_app/core/pcl_live_source.dart';
 import 'package:pdscope_app/core/prefs.dart';
 import 'package:pdscope_app/core/shell.dart';
 import 'package:pdscope_app/core/workspace.dart';
 import 'sample_fixture.dart';
+import 'pcl_fixtures.dart';
 import 'package:pdscope_app/ui/app.dart';
 
 const MethodChannel _shellChannel = MethodChannel('pdscope/shell');
@@ -30,9 +32,9 @@ final List<MethodCall> _toShell = [];
 void _installShellPlatform() {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_shellChannel, (call) async {
-    _toShell.add(call);
-    return null;
-  });
+        _toShell.add(call);
+        return null;
+      });
 }
 
 /// 模拟外壳反过来推一条调用进来：拖放/文件关联 → `openFiles`，菜单 → `command`。
@@ -96,6 +98,7 @@ Future<void> _pumpApp(WidgetTester tester) async {
 
 late EngineClient engine;
 late Workspace workspace;
+late MemoryPclTransport closeTransport;
 
 void main() {
   // 通道那一套要 binding；而且 `ShellBridge` 的调用正是走 binding 的 messenger，
@@ -104,7 +107,11 @@ void main() {
 
   setUpAll(() async {
     engine = await EngineClient.instance();
-    workspace = Workspace(Future.value(engine));
+    workspace = Workspace(
+      Future.value(engine),
+      liveSourceFactory: () =>
+          PclLiveSource(transport: closeTransport = MemoryPclTransport()),
+    );
     _installShellPlatform();
     await ShellBridge.attach(workspace);
   });
@@ -117,70 +124,83 @@ void main() {
     );
   });
 
-  test('混合拖放：.atkcc / .sqlite(PD) / .sqlite(UFCS) / .pdStream 四种都认出来', () async {
-    final atkcc = _sample('安可60w-ip18pro.atkcc');
-    final pd = _sample('山泽60w-ip18pro.sqlite');
-    final ufcs = _sample('ufcs_vivo_x300u.sqlite');
-    final pdstream = _pdStreamSample();
+  test(
+    '混合拖放：.atkcc / .sqlite(PD) / .sqlite(UFCS) / .pdStream 四种都认出来',
+    () async {
+      final atkcc = _sample('安可60w-ip18pro.atkcc');
+      final pd = _sample('山泽60w-ip18pro.sqlite');
+      final ufcs = _sample('ufcs_vivo_x300u.sqlite');
+      final pdstream = _pdStreamSample();
 
-    final paths = <String>[?atkcc, ?pd, ?ufcs, ?pdstream];
-    if (paths.length < 3 || pdstream == null) {
-      markTestSkipped('本机样本不足（私有抓包不在仓库里），跳过');
-      return;
-    }
+      final paths = <String>[?atkcc, ?pd, ?ufcs, ?pdstream];
+      if (paths.length < 3 || pdstream == null) {
+        markTestSkipped('本机样本不足（私有抓包不在仓库里），跳过');
+        return;
+      }
 
-    final before = workspace.docs.length;
-    // ⚠ 走的是外壳那条路：平台消息 → 通道 → openFiles。不是直接调 ws.openFiles。
-    await _fromShell('openFiles', paths);
+      final before = workspace.docs.length;
+      // ⚠ 走的是外壳那条路：平台消息 → 通道 → openFiles。不是直接调 ws.openFiles。
+      await _fromShell('openFiles', paths);
 
-    await _waitUntil(
-      () =>
-          workspace.docs.length == before + paths.length &&
-          workspace.docs
-              .skip(before)
-              .every((d) => d.state != DocState.opening && d.state != DocState.decoding) &&
-          workspace.docs.last.state == DocState.done,
-    );
+      await _waitUntil(
+        () =>
+            workspace.docs.length == before + paths.length &&
+            workspace.docs
+                .skip(before)
+                .every(
+                  (d) =>
+                      d.state != DocState.opening &&
+                      d.state != DocState.decoding,
+                ) &&
+            workspace.docs.last.state == DocState.done,
+      );
 
-    final opened = workspace.docs.sublist(before);
-    expect(opened.length, paths.length, reason: '一次拖四份就应当开四个标签');
+      final opened = workspace.docs.sublist(before);
+      expect(opened.length, paths.length, reason: '一次拖四份就应当开四个标签');
 
-    final failed = opened.where((d) => d.state == DocState.failed).toList();
-    expect(
-      failed.map((d) => '${d.displayName}: ${d.error}').toList(),
-      isEmpty,
-      reason: '这四份都应当认得出来',
-    );
+      final failed = opened.where((d) => d.state == DocState.failed).toList();
+      expect(
+        failed.map((d) => '${d.displayName}: ${d.error}').toList(),
+        isEmpty,
+        reason: '这四份都应当认得出来',
+      );
 
-    // 按**内容**分流，不看扩展名。
-    expect(
-      opened.every((d) => d.meta != null),
-      isTrue,
-      reason: '四份都应当有元数据（打不开的话上面那条就已经挂了）',
-    );
-    expect(opened[0].meta!.container, 'atkcc');
-    expect(opened[1].meta!.container, 'sqlite');
-    expect(opened[2].meta!.container, 'sqlite');
-    expect(
-      opened.map((d) => d.meta!.container),
-      contains('pdstream'),
-      reason: '.pdStream 必须能认出来',
-    );
+      // 按**内容**分流，不看扩展名。
+      expect(
+        opened.every((d) => d.meta != null),
+        isTrue,
+        reason: '四份都应当有元数据（打不开的话上面那条就已经挂了）',
+      );
+      expect(opened[0].meta!.container, 'atkcc');
+      expect(opened[1].meta!.container, 'sqlite');
+      expect(opened[2].meta!.container, 'sqlite');
+      expect(
+        opened.map((d) => d.meta!.container),
+        contains('pdstream'),
+        reason: '.pdStream 必须能认出来',
+      );
 
-    // 「认出来」还不够：没有 ADC 的 .pdStream 也要真的解出报文（只是没有波形）。
-    final streamDoc = opened.firstWhere((d) => d.meta!.container == 'pdstream');
-    expect(streamDoc.isUfcs, isFalse);
-    expect(streamDoc.stats!.packetCount, greaterThan(0), reason: '.pdStream 也要解出报文');
-    expect(
-      streamDoc.stats!.crcUnknown,
-      streamDoc.stats!.packetCount,
-      reason: '这类容器不存 CRC ⇒ 只能记「未记录」，不是「通过」',
-    );
+      // 「认出来」还不够：没有 ADC 的 .pdStream 也要真的解出报文（只是没有波形）。
+      final streamDoc = opened.firstWhere(
+        (d) => d.meta!.container == 'pdstream',
+      );
+      expect(streamDoc.isUfcs, isFalse);
+      expect(
+        streamDoc.stats!.packetCount,
+        greaterThan(0),
+        reason: '.pdStream 也要解出报文',
+      );
+      expect(
+        streamDoc.stats!.crcUnknown,
+        streamDoc.stats!.packetCount,
+        reason: '这类容器不存 CRC ⇒ 只能记「未记录」，不是「通过」',
+      );
 
-    // 顺带确认 UFCS 那份走的是 UFCS 语义，不是 PD。
-    final ufcsDoc = opened.firstWhere((d) => d.meta!.isUfcs);
-    expect(ufcsDoc.meta!.protocol, 'UFCS');
-  });
+      // 顺带确认 UFCS 那份走的是 UFCS 语义，不是 PD。
+      final ufcsDoc = opened.firstWhere((d) => d.meta!.isUfcs);
+      expect(ufcsDoc.meta!.protocol, 'UFCS');
+    },
+  );
 
   test('拖进来的坏文件只让它自己那个标签变红', () async {
     final good = _sample('山泽60w-ip18pro.sqlite');
@@ -205,7 +225,10 @@ void main() {
           workspace.docs.length == before + 2 &&
           workspace.docs
               .skip(before)
-              .every((d) => d.state != DocState.opening && d.state != DocState.decoding),
+              .every(
+                (d) =>
+                    d.state != DocState.opening && d.state != DocState.decoding,
+              ),
     );
 
     final opened = workspace.docs.sublist(before);
@@ -290,7 +313,10 @@ void main() {
       await _fromShell('openFiles', [path]);
       // 外壳推来的这条是异步的；等到这份成为当前文档、且状态报出去了为止。
       await _waitUntil(() => workspace.docs.length == before + 1);
-      await _waitUntil(() => _reportedTitle() != null, timeout: const Duration(seconds: 20));
+      await _waitUntil(
+        () => _reportedTitle() != null,
+        timeout: const Duration(seconds: 20),
+      );
     });
 
     // 外壳拿标题的方式就是 SetWindowTextW；这一条同时也是「转交进来的路径
@@ -303,5 +329,18 @@ void main() {
       await _fromShell('command', 'closeAll');
       await _waitUntil(() => workspace.docs.isEmpty);
     });
+  });
+
+  test('窗口关闭请求先完成 END/STOP 并释放端点，再允许关闭', () async {
+    final doc = workspace.openLive();
+    await doc.liveEnumerate();
+    await doc.liveConnect(doc.liveDevices.single);
+    await doc.liveStart();
+    await _fromShell('requestClose', null);
+    await _waitUntil(() => workspace.docs.isEmpty);
+    expect(closeTransport.isOpen, isFalse);
+    expect(closeTransport.running, isFalse);
+    expect(frameOf(closeTransport.written.last).body, [1]);
+    await closeTransport.dispose();
   });
 }

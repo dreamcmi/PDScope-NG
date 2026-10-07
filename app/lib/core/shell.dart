@@ -73,6 +73,10 @@ class ShellBridge {
         case 'command':
           commands.add(call.arguments as String);
           return null;
+        case 'requestClose':
+          // Windows 窗口销毁前先等待设备 END/STOP 和后台资源释放。
+          await workspace.closeAll();
+          return true;
       }
       return null;
     });

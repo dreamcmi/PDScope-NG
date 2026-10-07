@@ -1,8 +1,7 @@
 // live_source.dart — 实时采集：设备源契约 + 状态机 + 模拟设备源
 //
-// 这一层只回答一个问题：**界面需要设备提供什么**。协议层还没定（设计第 11 节），
-// 所以这里先立契约、再配一个模拟实现 —— 界面因此今天就能跑、能被审查，
-// 真协议接入时只需再写一个 LiveSource 实现，界面与 LiveSession 都不用动。
+// 定义页面使用的设备源契约。PclLiveSource 接入真实 PCL 设备，
+// MockLiveSource 为测试提供独立的模拟数据；两者共享页面事件和数据模型。
 //
 // 与核心 JSON 的关系：模拟源产出的行与详情**逐字段对齐** core/src/session.cpp 的
 // packetListItemJson / packetDetailJsonOf（也就是 models.dart 认的那套）。
@@ -58,9 +57,8 @@ class LiveDevice {
 
   final List<LiveCapability> capabilities;
 
-  bool can(String label) => capabilities.any(
-    (c) => c.label == label && c.state == LiveCapState.yes,
-  );
+  bool can(String label) =>
+      capabilities.any((c) => c.label == label && c.state == LiveCapState.yes);
 
   LiveCapability? capOf(String label) {
     for (final c in capabilities) {
@@ -93,11 +91,19 @@ enum LiveState {
 
   /// 出事了 —— 状态条要变色的那几个。
   bool get isBad => this == LiveState.parked || this == LiveState.disconnected;
-  bool get isWarn => this == LiveState.paused || this == LiveState.recoverableError;
+  bool get isWarn =>
+      this == LiveState.paused || this == LiveState.recoverableError;
 }
 
 /// 采集期间一直在动的计数。全部来自设备源，界面只负责显示（原则①：不隐瞒）。
 class LiveStats {
+  bool timeUncertain = false;
+
+  /// 是否确实拥有设备提供的精确丢包数量；PCL 仅上报粘滞标志。
+  bool lossCountKnown = true;
+  int lossReports = 0;
+  int sequenceGaps = 0;
+  int invalidFrames = 0;
   int packets = 0;
   int samples = 0;
   double durationSec = 0;
@@ -117,10 +123,15 @@ class LiveStats {
   /// 已发出的命令条数。节拍本身就是设备健康的指标。
   int commands = 0;
 
-  /// 因超出内存上限被裁掉的历史条数（模拟源才有，真源应尽量为 0）。
+  /// 因超出上位机内存上限被裁掉的历史条数。
   int trimmed = 0;
 
   void reset() {
+    timeUncertain = false;
+    lossCountKnown = true;
+    lossReports = 0;
+    sequenceGaps = 0;
+    invalidFrames = 0;
     packets = 0;
     samples = 0;
     durationSec = 0;
@@ -154,11 +165,21 @@ class LiveStartOptions {
     this.analog = true,
     this.highSpeed = false,
     this.pollMs = 50,
+    this.voltage = true,
+    this.current = false,
+    this.goodCrcFilter = false,
+    this.channelSelect = 0,
   });
   final bool pd;
   final bool analog;
   final bool highSpeed;
   final int pollMs;
+  final bool voltage;
+  final bool current;
+  final bool goodCrcFilter;
+
+  /// PCL 数据通道：0 自动，1 CC1，2 CC2，3 双 CC。
+  final int channelSelect;
 }
 
 /* ────────────────────────── 事件 ────────────────────────── */
@@ -196,6 +217,11 @@ class LiveStatsEvent extends LiveEvent {
     required this.ioTimeouts,
     required this.rejects,
     required this.dropped,
+    this.lossReports = 0,
+    this.sequenceGaps = 0,
+    this.invalidFrames = 0,
+    this.lossCountKnown = true,
+    this.timeUncertain = false,
   });
 
   final double durationSec;
@@ -203,6 +229,17 @@ class LiveStatsEvent extends LiveEvent {
   final int ioTimeouts;
   final int rejects;
   final int dropped;
+  final int lossReports;
+  final int sequenceGaps;
+  final int invalidFrames;
+  final bool lossCountKnown;
+  final bool timeUncertain;
+}
+
+/// HELLO 验证后更新设备能力，区别于仅发现传输端点。
+class LiveDeviceEvent extends LiveEvent {
+  const LiveDeviceEvent(this.device);
+  final LiveDevice device;
 }
 
 class LiveTraceEvent extends LiveEvent {
@@ -222,6 +259,9 @@ class LiveStateEvent extends LiveEvent {
 
 /// 设备源。界面只认这个接口。
 abstract class LiveSource {
+  /// 后端是否提供设备侧暂停/恢复操作。
+  bool get supportsPause;
+
   /// 后端名，显示在顶栏 chip 与设备卡上（如 `hid` / `winusb` / `mock`）。
   String get backendName;
 
@@ -246,8 +286,7 @@ abstract class LiveSource {
   void pause();
   void resume();
 
-  /// 停止采集。**收尾仍要发一次 Disconnect** —— 让设备结束会话、
-  /// 屏幕从「抓包中」恢复回来。这条最该发出去。
+  /// 停止采集并完成协议收尾；PCL 发送 END 并等待 STOP，期间接收尾部数据。
   Future<void> stop();
 
   /// 断开设备（stop + 关闭句柄）。
@@ -280,6 +319,8 @@ class MockLiveSource implements LiveSource {
   MockLiveSource({this.seed = 7});
 
   final int seed;
+  @override
+  bool get supportsPause => true;
 
   @override
   String get backendName => 'mock';
@@ -304,6 +345,7 @@ class MockLiveSource implements LiveSource {
   int _seq = 0;
   int _msgId = 0;
   int _ticks = 0;
+
   /// 时间基准：**由节拍数推出来**，不是每秒加一。
   /// 报文每 125 ms 一条，若时间只按秒走，同一秒里的 8 条会拿到同一个时间戳 ——
   /// 时间轴会挤成一根柱子、排序也失去意义。
@@ -476,7 +518,8 @@ class MockLiveSource implements LiveSource {
       role: '',
       msgId: null,
       objects: null,
-      dataHex: '41 02 3F 00 1A 8C 44 D2 09 31 7E 05 B3 6A 18 C4 92 7B 40 E1 5D 28 A7 3F',
+      dataHex:
+          '41 02 3F 00 1A 8C 44 D2 09 31 7E 05 B3 6A 18 C4 92 7B 40 E1 5D 28 A7 3F',
       summary: '属性长度 63 字节超出上限',
       warn: 1,
       detail: [
@@ -488,9 +531,14 @@ class MockLiveSource implements LiveSource {
     );
     _pushTrace(false, '41 02 3F 00 1A 8C 44 D2 ...', '长度超出上限 → 主动停车');
     _pushTrace(true, '01 00 00 00', 'Disconnect · 停车后收尾仍要发');
-    _emit(const LiveStateEvent(LiveState.parked,
-        message: '设备返回了一条无法解释的响应：cmd 0x41 · att 0x0002 · 长度 63 字节，'
-            '超出了该属性的最大长度。继续发送可能让设备侧状态更糟，因此由本工具主动停车。'));
+    _emit(
+      const LiveStateEvent(
+        LiveState.parked,
+        message:
+            '设备返回了一条无法解释的响应：cmd 0x41 · att 0x0002 · 长度 63 字节，'
+            '超出了该属性的最大长度。继续发送可能让设备侧状态更糟，因此由本工具主动停车。',
+      ),
+    );
   }
 
   /// 演练「设备掉线」。
@@ -500,7 +548,9 @@ class MockLiveSource implements LiveSource {
     _timer = null;
     _clock = null;
     _pushTrace(false, '——', 'USB 读错误：设备已断开');
-    _emit(const LiveStateEvent(LiveState.disconnected, message: '设备已断开（USB 读错误）。'));
+    _emit(
+      const LiveStateEvent(LiveState.disconnected, message: '设备已断开（USB 读错误）。'),
+    );
   }
 
   /* ── 脚本化的报文生成 ────────────────────────────────────── */
@@ -534,7 +584,8 @@ class MockLiveSource implements LiveSource {
           msgId: _nextId(),
           objects: 7,
           dataHex: '2A 84 91 12 D2 2C 01 2C ...',
-          summary: 'Fixed 5V/3A · Fixed 9V/3A · Fixed 12V/3A · Fixed 15V/3A · Fixed 20V/5A',
+          summary:
+              'Fixed 5V/3A · Fixed 9V/3A · Fixed 12V/3A · Fixed 15V/3A · Fixed 20V/5A',
           detail: [
             {'key': 'Object', 'value': 'Object 1 · Fixed Supply'},
             {'key': '电压', 'value': '5.00 V'},
@@ -606,7 +657,8 @@ class MockLiveSource implements LiveSource {
           msgId: _nextId(),
           objects: 2,
           dataHex: 'E0 03 00 00 ...',
-          summary: '输出 ${_vbus.toStringAsFixed(2)} V · ${_ibus.toStringAsFixed(2)} A'
+          summary:
+              '输出 ${_vbus.toStringAsFixed(2)} V · ${_ibus.toStringAsFixed(2)} A'
               ' · 温度 ${_temp.toStringAsFixed(1)} ℃',
           detail: [
             {'key': 'Object', 'value': '扩展头'},
@@ -647,20 +699,25 @@ class MockLiveSource implements LiveSource {
       _vbus += (_targetV - _vbus) * 0.25;
       _ibus += (_targetI - _ibus) * 0.25;
       _temp += (_rng.nextDouble() - 0.5) * 0.2;
-      _emit(LiveBusEvent([_t], [_vbus + (_rng.nextDouble() - 0.5) * 0.02],
-          [_ibus + (_rng.nextDouble() - 0.5) * 0.01]));
+      _emit(
+        LiveBusEvent([_t], [_vbus + (_rng.nextDouble() - 0.5) * 0.02], [
+          _ibus + (_rng.nextDouble() - 0.5) * 0.01,
+        ]),
+      );
     }
     _emitStats();
   }
 
   void _emitStats() {
-    _emit(LiveStatsEvent(
-      durationSec: _t,
-      commands: _commands,
-      ioTimeouts: _ioTimeouts,
-      rejects: _rejects,
-      dropped: _dropped,
-    ));
+    _emit(
+      LiveStatsEvent(
+        durationSec: _t,
+        commands: _commands,
+        ioTimeouts: _ioTimeouts,
+        rejects: _rejects,
+        dropped: _dropped,
+      ),
+    );
   }
 
   int _nextId() {

@@ -12,6 +12,7 @@ import 'engine.dart';
 import 'filters.dart';
 import 'live_session.dart';
 import 'live_source.dart';
+import 'pcl_live_source.dart';
 import 'models.dart';
 
 /// 标签状态（标签栏上的状态圆点）。
@@ -194,6 +195,15 @@ class CaptureDocument extends ChangeNotifier {
      ══════════════════════════════════════════════════════════════ */
 
   LiveSource? liveSource;
+
+  /// 正在等待枚举、HELLO、START 或 STOP；防止重复提交控制命令。
+  bool liveBusy = false;
+
+  /// 停止后允许重新打开配置面板，已采数据继续保留。
+  bool liveShowConfig = false;
+  bool _clearOnStart = false;
+  Completer<void>? _livePending;
+  int _lastLiveTrim = 0;
   LiveSession? live;
   LiveState liveState = LiveState.idle;
 
@@ -230,12 +240,14 @@ class CaptureDocument extends ChangeNotifier {
   /// 而不是连接界面。要回到连接界面得先明确「断开设备」（原则③：不自动重连）。
   bool get livePreCapture =>
       isLive &&
-      (liveState == LiveState.idle ||
+      (liveShowConfig ||
+          liveState == LiveState.idle ||
           liveState == LiveState.scanning ||
           liveState == LiveState.found ||
           liveState == LiveState.connecting ||
-          liveState == LiveState.ready ||
-          liveState == LiveState.listening);
+          (liveState == LiveState.ready && live!.isEmpty) ||
+          liveState == LiveState.listening ||
+          (liveState == LiveState.recoverableError && live!.isEmpty));
 
   /// 状态条是否显示：进入采集阶段之后才出现（未连接时它没有东西可报告）。
   bool get showLiveBar => isLive && !livePreCapture;
@@ -305,7 +317,50 @@ class CaptureDocument extends ChangeNotifier {
         st.ioTimeouts = e.ioTimeouts;
         st.rejects = e.rejects;
         st.dropped = e.dropped;
+        st.lossReports = e.lossReports;
+        st.sequenceGaps = e.sequenceGaps;
+        st.invalidFrames = e.invalidFrames;
+        st.lossCountKnown = e.lossCountKnown;
+        st.timeUncertain = e.timeUncertain;
+      case LiveDeviceEvent():
+        liveDevice = e.device;
+        l.deviceName = e.device.name;
+        l.transport = e.device.transport;
+        l.transportNote = e.device.transportNote;
+        if (liveSource is PclLiveSource && !liveCapturing) {
+          final o = liveOptions;
+          final minimum =
+              (liveSource as PclLiveSource).hello!.minSamplePeriodMs;
+          liveOptions = LiveStartOptions(
+            pd: true,
+            analog: o.analog,
+            pollMs: o.pollMs < minimum ? minimum : o.pollMs,
+            voltage: o.voltage && e.device.can('母线电压'),
+            current: o.current && e.device.can('母线电流'),
+            goodCrcFilter: o.goodCrcFilter && e.device.can('GoodCRC 过滤'),
+            channelSelect:
+                (o.channelSelect == 3
+                    ? e.device.can('双 CC 接收')
+                    : o.channelSelect == 0 || e.device.can('CC 选择'))
+                ? o.channelSelect
+                : 0,
+          );
+        }
+        notifyListeners();
       case LiveStateEvent():
+        if (e.state == LiveState.capturing && _clearOnStart) {
+          liveShowConfig = false;
+          l.clear();
+          rows.clear();
+          rows.setTotal(0);
+          _lastLiveTrim = 0;
+          _clearOnStart = false;
+          selected = null;
+          selectedViewIndex = null;
+          detail = null;
+          _detailRequest++;
+          detailLoading = false;
+        }
         liveState = e.state;
         if (e.message != null) liveMessage = e.message;
         // 「表格在跟随」这件事要让用户看得见 —— 否则他会以为界面卡住了
@@ -341,11 +396,11 @@ class CaptureDocument extends ChangeNotifier {
   void _refreshLive({bool force = false}) {
     final l = live;
     if (l == null) return;
-    final beforeTrim = l.stats.trimmed;
     l.rebuildView(filters);
 
     // 历史被裁掉时视图起点会前移，缓存必须整体作废（只在超过上限后偶发一次）。
-    final trimmedNow = l.stats.trimmed != beforeTrim;
+    final trimmedNow = l.stats.trimmed != _lastLiveTrim;
+    _lastLiveTrim = l.stats.trimmed;
     if (trimmedNow) {
       rows.clear();
       rows.setTotal(l.viewCount);
@@ -368,9 +423,8 @@ class CaptureDocument extends ChangeNotifier {
       'totalSamples': st.samples,
       'durationSec': st.durationSec,
       'packetCount': st.packets,
-      // ⚠ 设备不存 CRC：全部记「未记录」，绝不能写成「通过」（与 POWER-Z 路径同口径）。
-      'crcUnknown': st.packets,
-      'badCrc': 0,
+      'crcUnknown': l.crcUnknown,
+      'badCrc': l.badCrc,
       'trimmedBytes': st.trimmed,
     });
     meta = CaptureMeta({
@@ -380,15 +434,13 @@ class CaptureDocument extends ChangeNotifier {
       'protocol': 'USB PD',
       'fileBytes': 0,
       'decoded': true,
-      'title': liveDevice == null
-          ? '实时采集'
-          : '实时采集 · ${liveDevice!.name}',
+      'title': liveDevice == null ? '实时采集' : '实时采集 · ${liveDevice!.name}',
       'sampleRate': 1000.0,
       'sampleRateSource': 'live',
       'sampleRateRaw': '1 点 = 1 ms',
       'totalSamples': st.samples,
       'durationSec': st.durationSec,
-      'hasBus': true,
+      'hasBus': st.samples > 0,
       'busLabels': const ['VBUS', 'IBUS'],
       'multiChannel': false,
       'entryCount': st.packets,
@@ -402,37 +454,56 @@ class CaptureDocument extends ChangeNotifier {
   Future<void> liveEnumerate() async {
     final s = liveSource;
     if (s == null) return;
-    liveDevices = await s.enumerate();
-    liveState = liveDevices.isEmpty ? LiveState.idle : LiveState.found;
-    notifyListeners();
+    await _liveAction(() async {
+      liveDevices = await s.enumerate();
+      liveState = liveDevices.isEmpty ? LiveState.idle : LiveState.found;
+    });
   }
 
   Future<void> liveConnect(LiveDevice d) async {
     final s = liveSource;
     if (s == null) return;
-    await s.connect(d);
     liveDevice = d;
-    live!.deviceName = d.name;
-    live!.transport = d.transport;
-    live!.transportNote = d.transportNote;
-    notifyListeners();
+    await _liveAction(() async {
+      await s.connect(d);
+      final connected = liveDevice ?? d;
+      live!.deviceName = connected.name;
+      live!.transport = connected.transport;
+      live!.transportNote = connected.transportNote;
+    });
   }
 
   Future<void> liveListen(int windowMs) async {
     final s = liveSource;
     if (s == null) return;
-    liveListenReports = await s.listen(windowMs);
-    notifyListeners();
+    await _liveAction(() async {
+      liveListenReports = await s.listen(windowMs);
+    });
   }
 
-  void liveStart() {
+  /// 尚未确认 HELLO 的端点也可打开只读监听，全程不发送命令。
+  Future<void> liveListenDevice(LiveDevice device, int windowMs) async {
+    final source = liveSource;
+    if (source is! PclLiveSource) return;
+    liveDevice = device;
+    await _liveAction(() async {
+      liveListenReports = await source.listenDevice(device, windowMs);
+    });
+  }
+
+  Future<void> liveStart() async {
+    if (liveBusy) return;
     final s = liveSource;
     if (s == null) return;
-    liveMessage = null;
-    live!.clear();
-    rows.clear();
-    rows.setTotal(0);
-    unawaited(s.start(liveOptions));
+    _clearOnStart = true;
+    await _liveAction(() async {
+      try {
+        await s.start(liveOptions);
+      } catch (_) {
+        _clearOnStart = false;
+        rethrow;
+      }
+    });
   }
 
   void livePause() {
@@ -448,18 +519,52 @@ class CaptureDocument extends ChangeNotifier {
   /// 停止采集。**收尾仍要发一次 Disconnect** —— 设备靠它结束会话、
   /// 屏幕从「抓包中」恢复回来。这条最该发出去。
   Future<void> liveStop() async {
-    await liveSource?.stop();
-    _stopLiveRefresh();
-    _refreshLive(force: true);
+    await _liveAction(() async {
+      await liveSource?.stop();
+      _stopLiveRefresh();
+      _refreshLive(force: true);
+    });
   }
 
   Future<void> liveDisconnect() async {
-    await liveSource?.disconnect();
-    _stopLiveRefresh();
-    liveDevice = null;
-    liveDevices = const [];
-    liveState = LiveState.idle;
+    await _liveAction(() async {
+      await liveSource?.disconnect();
+      _stopLiveRefresh();
+      liveDevice = null;
+      liveDevices = const [];
+      liveState = LiveState.idle;
+      liveShowConfig = false;
+    });
+  }
+
+  Future<void> _liveAction(Future<void> Function() action) async {
+    if (liveBusy) return;
+    liveBusy = true;
+    final pending = Completer<void>();
+    _livePending = pending;
+    liveMessage = null;
     notifyListeners();
+    try {
+      await action();
+    } catch (error) {
+      liveMessage = error.toString();
+      notice = liveMessage;
+    } finally {
+      liveBusy = false;
+      pending.complete();
+      _livePending = null;
+      notifyListeners();
+    }
+  }
+
+  /// 关闭标签前等待本地控制操作结束，再同步停止和释放硬件。
+  Future<void> closeLive() async {
+    await _livePending?.future;
+    try {
+      await liveSource?.disconnect();
+    } finally {
+      await liveSource?.dispose();
+    }
   }
 
   /// 演练入口（仅模拟设备源有）：把「主动停车 / 设备掉线」这两个
@@ -483,7 +588,8 @@ class CaptureDocument extends ChangeNotifier {
   String liveCsvName() {
     final t = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    final stamp = '${t.year}${two(t.month)}${two(t.day)}-${two(t.hour)}${two(t.minute)}';
+    final stamp =
+        '${t.year}${two(t.month)}${two(t.day)}-${two(t.hour)}${two(t.minute)}';
     final dev = liveDevice?.name.replaceAll(RegExp(r'[^\w\-]+'), '-') ?? '设备';
     return '实时采集-$dev-$stamp.csv';
   }

@@ -66,7 +66,16 @@ class LiveBar extends StatelessWidget {
               child: Row(children: _metrics(p, l)),
             ),
           ),
-          ..._actions(context, p),
+          IgnorePointer(
+            ignoring: doc.liveBusy,
+            child: Opacity(
+              opacity: doc.liveBusy ? 0.5 : 1,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: _actions(context, p),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -106,6 +115,7 @@ class LiveBar extends StatelessWidget {
     }
 
     metric('报文', fmtCount(st.packets));
+    if (st.timeUncertain) metric('时间', '连续性不确定');
     if (doc.liveState == LiveState.capturing ||
         doc.liveState == LiveState.paused) {
       metric('速率', rate.toStringAsFixed(1));
@@ -121,7 +131,16 @@ class LiveBar extends StatelessWidget {
 
     // 丢包**永远显示**（0 也是绿的）：它一旦非 0 会被误读成「设备没发」，
     // 所以这个「我们没丢」的证据要一直在场。
-    out.add(_health(p, '丢包', st.dropped, HealthLevel.ok));
+    if (st.lossCountKnown) {
+      out.add(_health(p, '丢包', st.dropped, HealthLevel.warn));
+    } else {
+      metric('丢包数', '未知');
+      out.add(_health(p, '损失上报', st.lossReports, HealthLevel.warn));
+      out.add(_health(p, '帧缺口', st.sequenceGaps, HealthLevel.warn));
+      if (st.invalidFrames > 0) {
+        out.add(_health(p, '坏帧', st.invalidFrames, HealthLevel.warn));
+      }
+    }
     // 超时只有非 0 才显示 —— 空闲超时是正常现象，常年挂个 0 只会占地方。
     if (st.ioTimeouts > 0) {
       out.add(_health(p, '超时', st.ioTimeouts, HealthLevel.warn));
@@ -148,11 +167,12 @@ class LiveBar extends StatelessWidget {
       padding: const EdgeInsets.only(right: 6),
       child: Tooltip(
         message: switch (label) {
-          '丢包' => n == 0
-              ? '队列没有溢出，一条都没丢'
-              : '队列溢出丢掉了 $n 条 —— 少的报文不是「设备没发」',
+          '丢包' => n == 0 ? '队列没有溢出，一条都没丢' : '队列溢出丢掉了 $n 条 —— 少的报文不是「设备没发」',
           '超时' => 'USB 空闲超时 $n 次。设备没话说时这是正常现象，不必慌',
           '拒绝' => '设备明确拒绝了 $n 条命令',
+          '损失上报' => '粘滞损失位出现新增标志 $n 次，不能换算成精确丢包数量',
+          '帧缺口' => 'DATA/EVT 编号出现 $n 个可观察帧缺口，连续也不能证明无损',
+          '坏帧' => '长度、CRC 或语义验证失败 $n 次，整帧拒绝',
           _ => '因内存上限裁掉了最旧的 $n 条',
         },
         child: Container(
@@ -191,8 +211,10 @@ class LiveBar extends StatelessWidget {
         gap();
         out.add(_outlinedAccent(p, '导出 CSV', onExportCsv));
         gap();
-        out.add(_outlined(p, '暂停', doc.livePause));
-        gap();
+        if (doc.liveSource?.supportsPause == true) {
+          out.add(_outlined(p, '暂停', doc.livePause));
+          gap();
+        }
         out.add(_filled(p, '停止', () => doc.liveStop()));
       case LiveState.paused:
         gap();
@@ -206,8 +228,13 @@ class LiveBar extends StatelessWidget {
         out.add(_filled(p, '继续', doc.liveResume));
       case LiveState.listening:
         gap();
-        out.add(Text('只收不发，不向设备写任何字节',
-            style: TextStyle(fontSize: 11.5, color: p.tx3)));
+        out.add(
+          Text(
+            '只收不发，不向设备写任何字节',
+            style: TextStyle(fontSize: 11.5, color: p.tx3),
+          ),
+        );
+      case LiveState.ready:
       case LiveState.stopped:
         gap();
         out.add(_ghost(p, '日志', onOpenTrace));
@@ -215,21 +242,32 @@ class LiveBar extends StatelessWidget {
         out.add(_outlinedAccent(p, '导出 CSV', onExportCsv));
         gap();
         out.add(_outlined(p, '重新开始', doc.liveStart));
+        gap();
+        out.add(
+          _outlined(p, '采集配置', () {
+            doc.liveShowConfig = true;
+            doc.touch();
+          }),
+        );
       case LiveState.recoverableError:
         gap();
         out.add(_ghost(p, '日志', onOpenTrace));
         gap();
         out.add(_outlined(p, '停止', () => doc.liveStop()));
+        gap();
+        out.add(_outlined(p, '断开设备', () => doc.liveDisconnect()));
       case LiveState.parked:
       case LiveState.disconnected:
         // 原则③：**不自动重连**，也不给「重连」按钮 ——
         // 要不要重来由人决定，且要先明确断开。
         gap();
-        out.add(_ghost(p, '查看通讯日志', () {
-          doc.showTrace = true;
-          doc.touch();
-          onOpenTrace();
-        }));
+        out.add(
+          _ghost(p, '查看通讯日志', () {
+            doc.showTrace = true;
+            doc.touch();
+            onOpenTrace();
+          }),
+        );
         if (doc.liveState == LiveState.parked) {
           gap();
           out.add(_outlined(p, '断开设备', () => doc.liveDisconnect()));
@@ -271,10 +309,7 @@ class LiveBar extends StatelessWidget {
         ],
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          child: Text(
-            '演练',
-            style: TextStyle(fontSize: 11.5, color: p.tx3),
-          ),
+          child: Text('演练', style: TextStyle(fontSize: 11.5, color: p.tx3)),
         ),
       ),
     );
@@ -282,16 +317,16 @@ class LiveBar extends StatelessWidget {
 
   /* ── 按钮（配方全部来自现有控件）──────────────────────────── */
 
-  static Widget _filled(Palette p, String label, VoidCallback onTap) =>
-      _Btn(label: label, onTap: onTap, bg: p.accent, fg: Colors.white, bold: true);
-
-  static Widget _outlined(Palette p, String label, VoidCallback onTap) => _Btn(
+  static Widget _filled(Palette p, String label, VoidCallback onTap) => _Btn(
     label: label,
     onTap: onTap,
-    bg: p.panel,
-    fg: p.tx2,
-    border: p.line,
+    bg: p.accent,
+    fg: Colors.white,
+    bold: true,
   );
+
+  static Widget _outlined(Palette p, String label, VoidCallback onTap) =>
+      _Btn(label: label, onTap: onTap, bg: p.panel, fg: p.tx2, border: p.line);
 
   /// 导出用描边 + accent 文字：它是个有用的次要动作，
   /// 不能跟唯一的实心主按钮抢注意力。

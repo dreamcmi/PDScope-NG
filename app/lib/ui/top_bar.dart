@@ -171,10 +171,10 @@ class TopBar extends StatelessWidget {
         chips.add(
           _Chip(
             p,
-            'CRC 未记录 ${st.crcUnknown}',
+            '${d.isLive ? 'CRC 未确认' : 'CRC 未记录'} ${st.crcUnknown}',
             p.warn,
             p.warn.withValues(alpha: .13),
-            tip: '导出文件未记录 CRC',
+            tip: d.isLive ? '设备结论未知，或记录未保留可校验的完整 CRC' : '导出文件未记录 CRC',
           ),
         );
       }

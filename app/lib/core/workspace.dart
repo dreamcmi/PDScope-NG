@@ -18,6 +18,7 @@ import 'engine.dart';
 import 'ffi.dart';
 import 'filters.dart';
 import 'live_source.dart';
+import 'pcl_live_source.dart';
 import 'models.dart';
 import 'prefs.dart';
 
@@ -30,7 +31,14 @@ class _Job {
 }
 
 class Workspace extends ChangeNotifier {
-  Workspace(this.engine, {Prefs? prefs}) : prefs = prefs ?? Prefs();
+  Workspace(
+    this.engine, {
+    Prefs? prefs,
+    LiveSource Function()? liveSourceFactory,
+  }) : prefs = prefs ?? Prefs(),
+       _liveSourceFactory = liveSourceFactory ?? PclLiveSource.new;
+
+  final LiveSource Function() _liveSourceFactory;
 
   final Future<EngineClient> engine;
   EngineClient? _engine;
@@ -176,9 +184,7 @@ class Workspace extends ChangeNotifier {
       path: '', // 实时采集没有路径
       displayName: '实时采集',
     );
-    // 设备源可插拔：现在挂的是模拟源。真协议接入时换掉这一行即可，
-    // 界面与 LiveSession 都不需要动。
-    doc.attachLive(MockLiveSource());
+    doc.attachLive(_liveSourceFactory());
     docs.add(doc);
     _activeIndex = docs.length - 1;
     notifyListeners();
@@ -314,7 +320,26 @@ class Workspace extends ChangeNotifier {
     if (n >= 1 && n <= docs.length) activate(n - 1);
   }
 
-  Future<void> closeAt(int index, {bool activateNext = true}) async {
+  /// 已移除标签但尚未释放完成的资源；窗口退出必须等待这些操作。
+  final Set<Future<void>> _closingDocuments = {};
+
+  Future<void> closeAt(int index, {bool activateNext = true}) {
+    final done = Completer<void>();
+    final pending = done.future;
+    _closingDocuments.add(pending);
+    unawaited(
+      _closeAt(index, activateNext: activateNext)
+          .then<void>(
+            (_) => done.complete(),
+            onError: (Object error, StackTrace stack) =>
+                done.completeError(error, stack),
+          )
+          .whenComplete(() => _closingDocuments.remove(pending)),
+    );
+    return pending;
+  }
+
+  Future<void> _closeAt(int index, {required bool activateNext}) async {
     if (index < 0 || index >= docs.length) return;
     final doc = docs.removeAt(index);
     final wasActive = index == _activeIndex;
@@ -325,10 +350,14 @@ class Workspace extends ChangeNotifier {
     // 实时标签**没有引擎会话**：它的 id 只是工作区自己编的号，
     // 交给 engine.close 会去关一个从没打开过的会话。
     if (doc.isLive) {
-      await doc.liveSource?.stop();
-      await doc.liveSource?.disconnect();
-      doc.dispose();
-      if (activateNext && wasActive && active != null) unawaited(decode(active!));
+      try {
+        await doc.closeLive();
+      } finally {
+        doc.dispose();
+      }
+      if (activateNext && wasActive && active != null) {
+        unawaited(decode(active!));
+      }
       return;
     }
     final e = await ready;
@@ -349,8 +378,12 @@ class Workspace extends ChangeNotifier {
   }
 
   Future<void> closeAll() async {
-    for (var i = docs.length - 1; i >= 0; i--) {
-      await closeAt(i, activateNext: false);
+    while (docs.isNotEmpty) {
+      await closeAt(docs.length - 1, activateNext: false);
+    }
+    // 用户先关实时标签、紧接着关窗口时，标签已从 docs 移除但 END/STOP 仍可能进行中。
+    if (_closingDocuments.isNotEmpty) {
+      await Future.wait(_closingDocuments.toList());
     }
   }
 
